@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option go_package = "github.com/hextechpal/segmenter/internal/api/proto/contracts";
+
+import "google/protobuf/timestamp.proto";
+
+
+message CMessage {
+  string id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  bytes data = 3;
+}

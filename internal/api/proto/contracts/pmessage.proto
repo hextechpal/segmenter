@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+option go_package = "github.com/hextechpal/segmenter/internal/api/proto/contracts";
+
+message PMessage {
+  map<string, string> metadata = 1;
+  bytes data = 2;
+  string partition_key = 3;
+}
