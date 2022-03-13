@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/bsm/redislock v0.7.2
 	github.com/go-redis/redis/v8 v8.11.4
+	github.com/google/uuid v1.3.0
 	google.golang.org/protobuf v1.27.1
 )
 

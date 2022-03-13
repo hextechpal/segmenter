@@ -1,4 +1,4 @@
-package hash
+package common
 
 import "hash/fnv"
 

@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/hextechpal/segmenter/internal/api/proto/contracts"
+	"github.com/hextechpal/segmenter/internal/common"
 	"github.com/hextechpal/segmenter/pkg/api"
 	"log"
 	"strconv"
@@ -13,15 +14,12 @@ import (
 
 func main() {
 	ctx := context.TODO()
-	s, err := api.NewSegmenter(&api.Config{Address: "localhost:6379"})
+	s, err := api.NewSegmenter(&api.Config{Address: "localhost:6379", Namespace: common.GenerateUuid()[:4]})
 	if err != nil {
 		log.Fatalf("Error occurred while initializing segmenter, %v", err)
 	}
 
-	p, err := s.RegisterProducer(ctx, "account", 50, 4)
-	if err != nil {
-		log.Fatalf("Error while Registering producer, %v", err)
-	}
+	p := s.RegisterProducer(50, 5, "account")
 
 	for i := 0; i < 100; i++ {
 		var buf bytes.Buffer
