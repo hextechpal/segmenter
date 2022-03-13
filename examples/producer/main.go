@@ -19,8 +19,10 @@ func main() {
 		log.Fatalf("Error occurred while initializing segmenter, %v", err)
 	}
 
-	p := s.RegisterProducer(50, 5, "account")
-
+	p, err := s.RegisterProducer(ctx, 50, 5, "account")
+	if err != nil {
+		log.Fatalf("Error occurred while registering producer, %v", err)
+	}
 	for i := 0; i < 100; i++ {
 		var buf bytes.Buffer
 		acc := &Account{ID: i, Name: fmt.Sprintf("Name_%d", i)}

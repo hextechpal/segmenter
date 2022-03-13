@@ -13,12 +13,12 @@ type Producer struct {
 	rdb    *redis.Client
 	pcount int
 	psize  int64
-	name   string
+	stream string
 	ns     string
 }
 
-func NewProducer(rdb *redis.Client, ns, name string, psize int64, pcount int) segmenter.Producer {
-	return &Producer{rdb: rdb, pcount: pcount, psize: psize, name: name, ns: ns}
+func NewProducer(rdb *redis.Client, ns, stream string, psize int64, pcount int) segmenter.Producer {
+	return &Producer{rdb: rdb, pcount: pcount, psize: psize, stream: stream, ns: ns}
 }
 
 func (p Producer) Produce(ctx context.Context, message *contracts.PMessage) (string, error) {
@@ -34,5 +34,5 @@ func (p Producer) Produce(ctx context.Context, message *contracts.PMessage) (str
 
 func (p Producer) getStream(partitionKey string) string {
 	pc := int(common.Hash(partitionKey)) % p.pcount
-	return fmt.Sprintf("__strm:%s:%s_%d", p.ns, p.name, pc)
+	return fmt.Sprintf("__%s:__strm:%s_%d", p.ns, p.stream, pc)
 }
