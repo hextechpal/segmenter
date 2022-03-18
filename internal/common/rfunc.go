@@ -11,9 +11,21 @@ import (
 func AcquireLock(ctx context.Context, rdb *redis.Client, key string, ttl time.Duration) (*redislock.Lock, error) {
 	locker := redislock.New(rdb)
 	opts := &redislock.Options{
-		RetryStrategy: redislock.ExponentialBackoff(100*time.Millisecond, 500*time.Millisecond),
+		RetryStrategy: redislock.ExponentialBackoff(100*time.Millisecond, ttl),
 	}
 	return locker.Obtain(ctx, fmt.Sprintf("__lock:%s", key), ttl, opts)
+}
+
+func AcquireAdminLock(ctx context.Context, rdb *redis.Client, ns string, ttl time.Duration) (*redislock.Lock, error) {
+	locker := redislock.New(rdb)
+	opts := &redislock.Options{
+		RetryStrategy: redislock.ExponentialBackoff(100*time.Millisecond, 500*time.Millisecond),
+	}
+	return locker.Obtain(ctx, fmt.Sprintf("__lock:%s", AdminKey(ns)), ttl, opts)
+}
+
+func AdminKey(ns string) string {
+	return fmt.Sprintf("__%s:admin", ns)
 }
 
 func QueryKey(ctx context.Context, rdb *redis.Client, key string) ([]byte, error) {

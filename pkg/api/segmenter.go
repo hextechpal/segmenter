@@ -2,19 +2,20 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/internal/common"
-	"github.com/hextechpal/segmenter/internal/pkg/segmenter"
-	sr "github.com/hextechpal/segmenter/internal/pkg/segmenter/redis"
-	"log"
+	"sync"
 	"time"
 )
 
 type Segmenter struct {
-	ns        string
-	rdb       *redis.Client
-	consumers []segmenter.Consumer
+	mu      sync.Mutex
+	ns      string
+	rdb     *redis.Client
+	streams map[string]*Stream
 }
 
 func NewSegmenter(c *Config) (*Segmenter, error) {
@@ -22,120 +23,120 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 		Addr:     c.Address,
 		Username: c.Username,
 		Password: c.Password,
-		DB:       1,
 	})
-
 	status := rdb.Ping(context.TODO())
 	if status.Err() != nil {
 		return nil, status.Err()
 	}
-	return &Segmenter{rdb: rdb, ns: c.Namespace}, nil
+	s := &Segmenter{rdb: rdb, ns: c.Namespace, streams: make(map[string]*Stream)}
+	return s, nil
 }
 
-// RegisterProducer : Will create stream based on the partition count
-// The format for the keys will be segmenter_${streamName}_#{0..partitionCount}
-// It also registers this stream record (immutable) in redis so that re-registrations
-// do not have any effect and appropriate errors can be thrown
-func (s *Segmenter) RegisterProducer(ctx context.Context, psize int64, pcount int, stream string) (segmenter.Producer, error) {
-	err := s.registerStream(ctx, stream, pcount)
+func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, batchSize int) (*Consumer, error) {
+	stream, err := s.findStream(ctx, name)
+	if err != nil || stream == nil {
+		// TODO handle the case when stream do not exist
+		return nil, errors.New("no Stream exist")
+	}
+	return stream.registerConsumer(ctx, batchSize)
+}
+
+func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
+	stream, ok := s.streams[name]
+	if ok {
+		return stream, nil
+	}
+
+	stream, err := s.fetchStream(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return sr.NewProducer(s.rdb, s.ns, stream, psize, pcount), nil
-}
 
-// RegisterConsumer : Will a redis consumer with the specified consumer group
-// This will cause a partitioning re-balancing
-func (s *Segmenter) RegisterConsumer(ctx context.Context, stream string, maxWaitTime time.Duration, batchSize int) (segmenter.Consumer, error) {
-	c := sr.NewConsumer(s.rdb, maxWaitTime, batchSize, stream, s.ns)
-	err := s.updateMemberShip(ctx, c.Id, stream)
+	// This will happen when we fetched the stream from redis hence initiating it
+	if stream != nil {
+		s.addStream(stream)
+		return stream, nil
+	}
+
+	stream = NewStream(s.rdb, s.ns, name, pcount, psize)
+	err = s.saveStream(ctx, name, stream)
 	if err != nil {
 		return nil, err
 	}
-	return c, nil
+	s.addStream(stream)
+	return stream, nil
 }
 
-func (s *Segmenter) registerStream(ctx context.Context, stream string, pcount int) error {
-	key := segmenter.MemberShipKey(s.ns, stream)
-	lock, err := common.AcquireLock(ctx, s.rdb, key, 2*time.Second)
-	if err != nil {
-		return err
+func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error) {
+	stream, ok := s.streams[name]
+	if ok {
+		return stream, nil
 	}
-	defer lock.Release(ctx)
-	membership, err := segmenter.QueryMembershipL(ctx, s.rdb, key)
+	stream, err := s.fetchStream(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	if stream == nil {
+		return nil, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.streams[name] = stream
+	return stream, nil
+
+}
+
+func (s *Segmenter) fetchStream(ctx context.Context, name string) (*Stream, error) {
+	res, err := s.rdb.Get(ctx, s.streamKey(name)).Bytes()
 	if err == redis.Nil {
-		return segmenter.UpdateMembershipL(ctx, s.rdb, key, &segmenter.Membership{
-			Stream:        stream,
-			Pcount:        pcount,
-			Distributions: []segmenter.Distribution{},
-		})
+		return nil, nil
 	} else if err != nil {
-		return err
-	} else if membership.Pcount != pcount {
-		return errors.New("trying to change partition count for stream " + stream)
-	} else {
-		return nil
+		return nil, err
 	}
+	var st Stream
+	err = json.Unmarshal(res, &st)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
 }
 
-func (s *Segmenter) updateMemberShip(ctx context.Context, cid, stream string) error {
-	key := segmenter.MemberShipKey(s.ns, stream)
-	lock, err := common.AcquireLock(ctx, s.rdb, key, 2*time.Second)
+func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
+	lock, err := common.AcquireAdminLock(ctx, s.rdb, s.ns, 100*time.Millisecond)
 	if err != nil {
 		return err
 	}
 	defer lock.Release(ctx)
-	membership, err := segmenter.QueryMembershipL(ctx, s.rdb, key)
-	if err != nil {
-		if err == redis.Nil {
-			//TODO: handle this better
-			log.Printf("Stream does not exist. Stream should be created before consumer")
-		}
-		return err
-	}
-
-	// TODO: partition count cannot be zero add a validation for that
-	cc := len(membership.Distributions) + 1
-	dists := make([]segmenter.Distribution, cc)
-	if membership.Pcount < cc {
-		copy(dists[:], append(membership.Distributions, segmenter.Distribution{ConsumerId: cid, Partitions: []int{}}))
-	} else if len(membership.Distributions) == 0 {
-		p := make([]int, membership.Pcount)
-		for i := 0; i < membership.Pcount; i++ {
-			p[i] = i
-		}
-		dists[0] = segmenter.Distribution{
-			ConsumerId: cid,
-			Partitions: p,
-		}
-	} else {
-		assigned := make([]int, 0)
-		ppw := membership.Pcount / cc
-
-		for i, dist := range membership.Distributions {
-			if len(dist.Partitions) > ppw {
-				dists[i] = segmenter.Distribution{
-					ConsumerId: dist.ConsumerId,
-					Partitions: dist.Partitions[:ppw],
-				}
-				assigned = append(assigned, dist.Partitions[ppw:]...)
-			} else {
-				dists[i] = dist
-			}
-
-		}
-		dists[cc-1] = segmenter.Distribution{
-			ConsumerId: cid,
-			Partitions: assigned,
-		}
-	}
-	err = segmenter.UpdateMembershipL(ctx, s.rdb, key, &segmenter.Membership{
-		Stream:        membership.Stream,
-		Pcount:        membership.Pcount,
-		Distributions: dists,
-	})
+	val, err := json.Marshal(stream)
 	if err != nil {
 		return err
 	}
-	return nil
+	return s.rdb.Set(ctx, s.streamKey(name), val, 0).Err()
 }
+
+func (s *Segmenter) streamKey(name string) string {
+	return fmt.Sprintf("__%s:__strm:%s", s.ns, name)
+}
+
+func (s *Segmenter) addStream(stream *Stream) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stream.Start()
+	s.streams[stream.Name] = stream
+}
+
+//func (s *Segmenter) GroupedStreamMembers(ctx context.Context, keys []string) map[string]Members {
+//	res := s.rdb.MGet(ctx, keys...).Val()
+//	groupedMembers := make(map[string]Members)
+//	for i := 0; i < len(res); i++ {
+//		var m Member
+//		_ = json.Unmarshal([]byte(res[i].(string)), &m)
+//		if _, ok := groupedMembers[m.Stream]; ok {
+//			groupedMembers[m.Stream] = append(groupedMembers[m.Stream], m)
+//		} else {
+//			groupedMembers[m.Stream] = []Member{m}
+//		}
+//	}
+//	return groupedMembers
+//}
