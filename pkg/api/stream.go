@@ -14,22 +14,43 @@ import (
 	"time"
 )
 
-const maintenanceLoopInterval = 60 * time.Second
+const controlLoopInterval = 100 * time.Millisecond
+const maintenanceLoopInterval = 500 * time.Millisecond
 const controlStreamSize = 256
 
-type Stream struct {
-	mu        sync.Mutex
-	rdb       *redis.Client
-	consumers map[string]*Consumer
-
+type StreamDTO struct {
 	Ns     string `json:"ns"`
 	Name   string `json:"name"`
 	Pcount int    `json:"pcount"`
 	Psize  int64  `json:"psize"`
 }
 
+type Stream struct {
+	mu        sync.Mutex
+	rdb       *redis.Client
+	consumers map[string]*Consumer
+
+	Ns     string
+	Name   string
+	Pcount int
+	Psize  int64
+}
+
 func NewStream(rdb *redis.Client, ns string, name string, pcount int, psize int64) *Stream {
-	return &Stream{rdb: rdb, Ns: ns, Name: name, Pcount: pcount, Psize: psize, consumers: make(map[string]*Consumer)}
+	s := &Stream{rdb: rdb, Ns: ns, Name: name, Pcount: pcount, Psize: psize, consumers: make(map[string]*Consumer)}
+	s.start()
+	return s
+}
+
+func NewStreamFromDTO(rdb *redis.Client, dto *StreamDTO) *Stream {
+	s := &Stream{rdb: rdb, Ns: dto.Ns, Name: dto.Name, Pcount: dto.Pcount, Psize: dto.Psize, consumers: make(map[string]*Consumer)}
+	s.start()
+	return s
+}
+
+func (s *Stream) start() {
+	go s.StartControlLoop()
+	go s.StartMaintenanceLoop()
 }
 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
@@ -67,12 +88,8 @@ func (s *Stream) Save(ctx context.Context, key string) error {
 // RegisterConsumer : Will a redis consumer with the specified consumer group
 // This will cause a partitioning re-balancing
 func (s *Stream) registerConsumer(ctx context.Context, batchSize int) (*Consumer, error) {
-	lock, err := common.AcquireAdminLock(ctx, s.rdb, s.Ns, 1*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Release(ctx)
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	c, err := NewConsumer(ctx, s.rdb, batchSize, s.Name, s.Ns)
 	if err != nil {
 		return nil, err
@@ -94,6 +111,12 @@ func (s *Stream) join(ctx context.Context, c *Consumer) error {
 }
 
 func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) error {
+	lock, err := common.AcquireAdminLock(ctx, s.rdb, s.Ns, 1*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.Release(ctx)
+
 	members, err := s.members(ctx)
 	if err != nil {
 		return err
@@ -147,24 +170,26 @@ func (s *Stream) memberShipKey() string {
 }
 
 func (s *Stream) computeMemberships(members Members) Members {
-	allPartitions := make([]int, s.Pcount)
+	allPartitions := make([]Partition, s.Pcount)
 	for i := 0; i < s.Pcount; i++ {
-		allPartitions[i] = i
+		allPartitions[i] = Partition(i)
 	}
 	partitionLen := int(math.Round(float64(s.Pcount) / float64(members.Len())))
 	newMembers := make([]Member, members.Len())
 	for i := 0; i < members.Len(); i++ {
 		if i == members.Len()-1 {
+			partitions := allPartitions[i*partitionLen:]
 			newMembers[i] = Member{
 				ConsumerId: members[i].ConsumerId,
 				JoinedAt:   members[i].JoinedAt,
-				Partitions: allPartitions[i*partitionLen:],
+				Partitions: partitions,
 			}
 		} else {
+			partitions := allPartitions[i*partitionLen : (i+1)*partitionLen]
 			newMembers[i] = Member{
 				ConsumerId: members[i].ConsumerId,
 				JoinedAt:   members[i].JoinedAt,
-				Partitions: allPartitions[i*partitionLen : (i+1)*partitionLen],
+				Partitions: partitions,
 			}
 		}
 	}
@@ -202,30 +227,43 @@ func (s *Stream) controlKey() string {
 }
 
 func (s *Stream) Start() {
-	go s.StartControlLoop()
-	go s.StartMaintenanceLoop()
+
 }
 
 func (s *Stream) StartControlLoop() {
+	log.Printf("Control Loop Strted for stream: %s\n", s.Name)
+	lastMessageId := "$"
 	stream := s.controlKey()
+	ctx := context.Background()
 	for {
-		result, err := s.rdb.XRead(context.Background(), &redis.XReadArgs{
-			Streams: []string{stream, "$"},
+		result, err := s.rdb.XRead(ctx, &redis.XReadArgs{
+			Streams: []string{stream, lastMessageId},
 			Count:   1,
+			Block:   1 * time.Second,
 		}).Result()
 
 		if err == redis.Nil {
-			log.Printf("No Control Key present")
+			// Do nothing
 		} else if err != nil {
-			log.Printf(" Error Happened while fetching control key, %v", err)
+			log.Printf(" Error Happened while fetching control key, %v\n", err)
 		} else {
-			res := result[0]
+			message := result[0].Messages[0]
+			data := message.Values["c"].(string)
+			var members Members
+			_ = json.Unmarshal([]byte(data), &members)
+			log.Printf("Control Loop: Recieved Control Messages %v \n", members)
 			// We are requesting results from only one stream so getting 0th result by default
-			for _, m := range res.Messages {
-				log.Printf("%v", m)
+			s.mu.Lock()
+			for _, m := range members {
+				if c, ok := s.consumers[m.ConsumerId]; ok {
+					log.Printf("Starting to rebalance consumer %s", m.ConsumerId)
+					c.RePartition(ctx, m.Partitions)
+				}
 			}
+			s.mu.Unlock()
+			lastMessageId = message.ID
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(controlLoopInterval)
 	}
 }
 

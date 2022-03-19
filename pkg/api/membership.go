@@ -8,9 +8,9 @@ const JOIN Reason = "JOIN"
 const LEAVE Reason = "LEAVE"
 
 type Member struct {
-	ConsumerId string `json:"consumerId"`
-	JoinedAt   int64  `json:"joinedAt"`
-	Partitions []int  `json:"partitions"`
+	ConsumerId string     `json:"consumerId"`
+	JoinedAt   int64      `json:"joinedAt"`
+	Partitions Partitions `json:"partitions"`
 }
 
 func (m Member) heartBeatKey(ns, stream string) string {

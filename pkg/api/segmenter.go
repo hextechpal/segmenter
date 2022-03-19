@@ -33,6 +33,8 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 }
 
 func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, batchSize int) (*Consumer, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stream, err := s.findStream(ctx, name)
 	if err != nil || stream == nil {
 		// TODO handle the case when stream do not exist
@@ -42,19 +44,22 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, batchSize
 }
 
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stream, ok := s.streams[name]
 	if ok {
 		return stream, nil
 	}
 
-	stream, err := s.fetchStream(ctx, name)
+	streamDTO, err := s.fetchStreamDTO(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
 	// This will happen when we fetched the stream from redis hence initiating it
-	if stream != nil {
-		s.addStream(stream)
+	if streamDTO != nil {
+		stream = NewStreamFromDTO(s.rdb, streamDTO)
+		s.streams[stream.Name] = stream
 		return stream, nil
 	}
 
@@ -63,7 +68,6 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 	if err != nil {
 		return nil, err
 	}
-	s.addStream(stream)
 	return stream, nil
 }
 
@@ -72,29 +76,26 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error
 	if ok {
 		return stream, nil
 	}
-	stream, err := s.fetchStream(ctx, name)
+	streamDTO, err := s.fetchStreamDTO(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	if stream == nil {
+	if streamDTO == nil {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.streams[name] = stream
+	s.streams[name] = NewStreamFromDTO(s.rdb, streamDTO)
 	return stream, nil
-
 }
 
-func (s *Segmenter) fetchStream(ctx context.Context, name string) (*Stream, error) {
+func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*StreamDTO, error) {
 	res, err := s.rdb.Get(ctx, s.streamKey(name)).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
 	}
-	var st Stream
+	var st StreamDTO
 	err = json.Unmarshal(res, &st)
 	if err != nil {
 		return nil, err
@@ -117,13 +118,6 @@ func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream)
 
 func (s *Segmenter) streamKey(name string) string {
 	return fmt.Sprintf("__%s:__strm:%s", s.ns, name)
-}
-
-func (s *Segmenter) addStream(stream *Stream) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stream.Start()
-	s.streams[stream.Name] = stream
 }
 
 //func (s *Segmenter) GroupedStreamMembers(ctx context.Context, keys []string) map[string]Members {

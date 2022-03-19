@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/hextechpal/segmenter/internal/common"
+	"github.com/hextechpal/segmenter/examples"
 	"github.com/hextechpal/segmenter/pkg/api"
 	"log"
 	"sync"
@@ -11,13 +11,13 @@ import (
 
 func main() {
 	ctx := context.TODO()
-	streamName := "account"
-	s, err := api.NewSegmenter(&api.Config{Address: "localhost:6379", Namespace: common.GenerateUuid()[:4]})
+
+	s, err := api.NewSegmenter(&api.Config{Address: "localhost:6379", Namespace: examples.Namespace})
 	if err != nil {
 		log.Fatalf("Error occurred while initializing segmenter, %v", err)
 	}
 
-	_, err = s.RegisterStream(ctx, streamName, 5, 2500)
+	_, err = s.RegisterStream(ctx, examples.StreamName, 20, 2500)
 	if err != nil {
 		log.Fatalf("Error occurred while registering streamName, %v", err)
 	}
@@ -26,7 +26,7 @@ func main() {
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
-			_, err := s.RegisterConsumer(ctx, streamName, 10)
+			_, err := s.RegisterConsumer(ctx, examples.StreamName, 10)
 			if err != nil {
 				log.Printf("Error happened while registering Consumer, %v", err)
 			}
@@ -34,5 +34,5 @@ func main() {
 		}()
 	}
 	wg.Wait()
-	time.Sleep(2 * time.Minute)
+	time.Sleep(1 * time.Minute)
 }
