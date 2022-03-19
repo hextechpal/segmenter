@@ -7,6 +7,5 @@ import "google/protobuf/timestamp.proto";
 
 message CMessage {
   string id = 1;
-  google.protobuf.Timestamp timestamp = 2;
-  bytes data = 3;
+  bytes data = 2;
 }

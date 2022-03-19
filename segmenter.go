@@ -17,6 +17,12 @@ type Segmenter struct {
 	streams map[string]*Stream
 }
 
+var EmptyStreamName error = errors.New("stream name cannot be empty")
+var EmptyGroupName error = errors.New("group cannot be empty")
+var InvalidBatchSize error = errors.New("batch size cannot less than 1")
+var InvalidPartitionCount error = errors.New("partition count cannot less than 1")
+var InvalidPartitionSize error = errors.New("partition size cannot less than 1")
+
 func NewSegmenter(c *Config) (*Segmenter, error) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     c.Address,
@@ -31,7 +37,19 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 	return s, nil
 }
 
-func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, batchSize int) (*Consumer, error) {
+func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int) (*Consumer, error) {
+
+	if name == "" {
+		return nil, EmptyStreamName
+	}
+
+	if group == "" {
+		return nil, EmptyGroupName
+	}
+
+	if batchSize < 1 {
+		return nil, InvalidBatchSize
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stream, err := s.findStream(ctx, name)
@@ -39,10 +57,22 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, batchSize
 		// TODO handle the case when stream do not exist
 		return nil, errors.New("no Stream exist")
 	}
-	return stream.registerConsumer(ctx, batchSize)
+	return stream.registerConsumer(ctx, group, batchSize)
 }
 
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
+	if name == "" {
+		return nil, EmptyStreamName
+	}
+
+	if pcount < 1 {
+		return nil, InvalidPartitionCount
+	}
+
+	if psize < 1 {
+		return nil, InvalidPartitionSize
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stream, ok := s.streams[name]
@@ -58,7 +88,7 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
 		stream = NewStreamFromDTO(s.rdb, streamDTO)
-		s.streams[stream.Name] = stream
+		s.streams[stream.name] = stream
 		return stream, nil
 	}
 
@@ -104,12 +134,13 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*StreamDTO
 }
 
 func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
-	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, 100*time.Millisecond)
+	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, "", 100*time.Millisecond)
 	if err != nil {
 		return err
 	}
 	defer lock.Release(ctx)
-	val, err := json.Marshal(stream)
+	streamDTO := NewStreamDTO(stream)
+	val, err := json.Marshal(streamDTO)
 	if err != nil {
 		return err
 	}
@@ -119,18 +150,3 @@ func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream)
 func (s *Segmenter) streamKey(name string) string {
 	return fmt.Sprintf("__%s:__strm:%s", s.ns, name)
 }
-
-//func (s *Segmenter) GroupedStreamMembers(ctx context.Context, keys []string) map[string]Members {
-//	res := s.rdb.MGet(ctx, keys...).Val()
-//	groupedMembers := make(map[string]Members)
-//	for i := 0; i < len(res); i++ {
-//		var m Member
-//		_ = json.Unmarshal([]byte(res[i].(string)), &m)
-//		if _, ok := groupedMembers[m.Stream]; ok {
-//			groupedMembers[m.Stream] = append(groupedMembers[m.Stream], m)
-//		} else {
-//			groupedMembers[m.Stream] = []Member{m}
-//		}
-//	}
-//	return groupedMembers
-//}

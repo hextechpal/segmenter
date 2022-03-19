@@ -22,15 +22,17 @@ type Consumer struct {
 	stream    string
 	batchSize int
 	ns        string
+	group     string
 }
 
-func NewConsumer(ctx context.Context, rdb *redis.Client, batchSize int, stream string, ns string) (*Consumer, error) {
+func NewConsumer(ctx context.Context, rdb *redis.Client, batchSize int, stream string, group string, pcount int, ns string) (*Consumer, error) {
 	c := &Consumer{
 		rdb:       rdb,
 		id:        GenerateUuid(),
 		batchSize: batchSize,
 		stream:    stream,
 		ns:        ns,
+		group:     group,
 		locks:     make(map[Partition]*redislock.Lock),
 	}
 	err := c.initiateHeartBeat(ctx)
@@ -42,8 +44,40 @@ func NewConsumer(ctx context.Context, rdb *redis.Client, batchSize int, stream s
 	return c, nil
 }
 
-func (c *Consumer) GetMessages(maxWaitDuration time.Duration) []contracts.CMessage {
-	return nil
+func (c *Consumer) GetMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	streamsKey := c.buildStreamsKey()
+	if len(streamsKey) == 0 {
+		return []*contracts.CMessage{}, nil
+	}
+	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    c.group,
+		Consumer: c.id,
+		Streams:  c.buildStreamsKey(),
+		Count:    int64(c.batchSize),
+		Block:    maxWaitDuration,
+	}).Result()
+
+	if err == redis.Nil {
+		return []*contracts.CMessage{}, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	cmessages := make([]*contracts.CMessage, 0)
+	for _, xstream := range result {
+		for _, m := range xstream.Messages {
+			cm := contracts.CMessage{
+				Id:   m.ID,
+				Data: []byte(m.Values["data"].(string)),
+			}
+			cmessages = append(cmessages, &cm)
+		}
+	}
+	return cmessages, nil
 }
 
 func (c *Consumer) GetID() string {
@@ -120,5 +154,23 @@ func (c *Consumer) refreshLocks() {
 		}
 		c.mu.Unlock()
 		time.Sleep(1000 * time.Millisecond)
+	}
+}
+
+func (c *Consumer) buildStreamsKey() []string {
+	i := 0
+	streams := make([]string, 2*len(c.locks))
+	for k, _ := range c.locks {
+		streams[i] = StreamKey(c.ns, c.stream, k)
+		streams[i+len(c.locks)] = ">"
+		i += 1
+	}
+	return streams
+}
+
+func (c *Consumer) createGroup(ctx context.Context) {
+	err := c.rdb.XGroupCreate(ctx, c.stream, c.group, "$").Err()
+	if err != nil {
+		log.Printf("Eroor happened while creating cgroup, %v", err)
 	}
 }

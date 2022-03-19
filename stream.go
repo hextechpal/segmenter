@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
+	"google.golang.org/protobuf/encoding/protojson"
 	"log"
 	"math"
 	"sort"
@@ -24,27 +25,34 @@ type StreamDTO struct {
 	Psize  int64  `json:"psize"`
 }
 
+func NewStreamDTO(s *Stream) *StreamDTO {
+	return &StreamDTO{
+		Ns:     s.ns,
+		Name:   s.name,
+		Pcount: s.pcount,
+		Psize:  s.psize,
+	}
+}
+
 type Stream struct {
 	mu        sync.Mutex
 	rdb       *redis.Client
 	consumers map[string]*Consumer
 
-	Ns     string
-	Name   string
-	Pcount int
-	Psize  int64
+	ns     string
+	name   string
+	pcount int
+	psize  int64
 }
 
 func NewStream(rdb *redis.Client, ns string, name string, pcount int, psize int64) *Stream {
-	s := &Stream{rdb: rdb, Ns: ns, Name: name, Pcount: pcount, Psize: psize, consumers: make(map[string]*Consumer)}
+	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize, consumers: make(map[string]*Consumer)}
 	s.start()
 	return s
 }
 
 func NewStreamFromDTO(rdb *redis.Client, dto *StreamDTO) *Stream {
-	s := &Stream{rdb: rdb, Ns: dto.Ns, Name: dto.Name, Pcount: dto.Pcount, Psize: dto.Psize, consumers: make(map[string]*Consumer)}
-	s.start()
-	return s
+	return NewStream(rdb, dto.Ns, dto.Name, dto.Pcount, dto.Psize)
 }
 
 func (s *Stream) start() {
@@ -53,43 +61,32 @@ func (s *Stream) start() {
 }
 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
+	data, _ := protojson.Marshal(m)
 	r := s.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: s.getRedisStream(m.GetPartitionKey()),
-		MaxLen: s.Psize,
+		MaxLen: s.psize,
 		Values: map[string]interface{}{
-			"m": map[string]interface{}{
-				"metadata": m.GetMetadata(),
-				"data":     m.GetData(),
-			},
+			"data": data,
 		},
 	})
 	return r.Result()
 }
 
 func (s *Stream) getRedisStream(partitionKey string) string {
-	pc := int(Hash(partitionKey)) % s.Pcount
-	return fmt.Sprintf("__%s:__strm:%s_%d", s.Ns, s.Name, pc)
-}
-
-func (s *Stream) Save(ctx context.Context, key string) error {
-	val := map[string]interface{}{
-		"Name":   s.Name,
-		"Pcount": s.Pcount,
-		"Psize":  s.Psize,
-	}
-	data, err := json.Marshal(val)
-	if err != nil {
-		return err
-	}
-	return s.rdb.Set(ctx, key, data, 0).Err()
+	pc := Partition(int(Hash(partitionKey)) % s.pcount)
+	return StreamKey(s.ns, s.name, pc)
 }
 
 // RegisterConsumer : Will a redis consumer with the specified consumer group
 // This will cause a partitioning re-balancing
-func (s *Stream) registerConsumer(ctx context.Context, batchSize int) (*Consumer, error) {
+func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int) (*Consumer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, err := NewConsumer(ctx, s.rdb, batchSize, s.Name, s.Ns)
+	c, err := NewConsumer(ctx, s.rdb, batchSize, s.name, group, s.pcount, s.ns)
+	if err != nil {
+		return nil, err
+	}
+	err = s.initializeGroup(ctx, group)
 	if err != nil {
 		return nil, err
 	}
@@ -104,19 +101,20 @@ func (s *Stream) registerConsumer(ctx context.Context, batchSize int) (*Consumer
 func (s *Stream) join(ctx context.Context, c *Consumer) error {
 	return s.rebalance(ctx, &MemberChangeInfo{
 		Reason:     JOIN,
-		ConsumerId: c.GetID(),
+		Group:      c.group,
+		ConsumerId: c.id,
 		Ts:         time.Now().UnixMilli(),
 	})
 }
 
 func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) error {
-	lock, err := AcquireAdminLock(ctx, s.rdb, s.Ns, 1*time.Second)
+	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, s.name, 1*time.Second)
 	if err != nil {
 		return err
 	}
 	defer lock.Release(ctx)
 
-	members, err := s.members(ctx)
+	members, err := s.members(ctx, changeInfo.Group)
 	if err != nil {
 		return err
 	}
@@ -133,6 +131,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) er
 	newMember := Member{
 		ConsumerId: changeInfo.ConsumerId,
 		JoinedAt:   changeInfo.Ts,
+		Group:      changeInfo.Group,
 	}
 	if changeInfo.Reason == JOIN {
 		members = members.Add(newMember)
@@ -140,6 +139,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) er
 		members = members.Remove(newMember)
 	}
 	sort.Sort(members)
+
 	newMembers := s.computeMemberships(members)
 	err = s.updateMembers(ctx, newMembers)
 	if err != nil {
@@ -148,7 +148,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) er
 	return s.sendControlMessage(ctx, newMembers)
 }
 
-func (s *Stream) members(ctx context.Context) (Members, error) {
+func (s *Stream) members(ctx context.Context, group string) (Members, error) {
 	bytes, err := s.rdb.Get(ctx, s.memberShipKey()).Bytes()
 	if err == redis.Nil {
 		return []Member{}, nil
@@ -160,36 +160,33 @@ func (s *Stream) members(ctx context.Context) (Members, error) {
 		if err != nil {
 			return nil, err
 		}
-		return members, err
+		return members.FilterBy(group), nil
 	}
 }
 
 func (s *Stream) memberShipKey() string {
-	return fmt.Sprintf("__%s:__mbsh:%s", s.Ns, s.Name)
+	return fmt.Sprintf("__%s:__%s:__mbsh", s.ns, s.name)
 }
 
 func (s *Stream) computeMemberships(members Members) Members {
-	allPartitions := make([]Partition, s.Pcount)
-	for i := 0; i < s.Pcount; i++ {
+	allPartitions := make([]Partition, s.pcount)
+	for i := 0; i < s.pcount; i++ {
 		allPartitions[i] = Partition(i)
 	}
-	partitionLen := int(math.Round(float64(s.Pcount) / float64(members.Len())))
+	partitionLen := int(math.Round(float64(s.pcount) / float64(members.Len())))
 	newMembers := make([]Member, members.Len())
 	for i := 0; i < members.Len(); i++ {
+		var partitions Partitions
 		if i == members.Len()-1 {
-			partitions := allPartitions[i*partitionLen:]
-			newMembers[i] = Member{
-				ConsumerId: members[i].ConsumerId,
-				JoinedAt:   members[i].JoinedAt,
-				Partitions: partitions,
-			}
+			partitions = allPartitions[i*partitionLen:]
 		} else {
-			partitions := allPartitions[i*partitionLen : (i+1)*partitionLen]
-			newMembers[i] = Member{
-				ConsumerId: members[i].ConsumerId,
-				JoinedAt:   members[i].JoinedAt,
-				Partitions: partitions,
-			}
+			partitions = allPartitions[i*partitionLen : (i+1)*partitionLen]
+		}
+		newMembers[i] = Member{
+			ConsumerId: members[i].ConsumerId,
+			JoinedAt:   members[i].JoinedAt,
+			Group:      members[i].Group,
+			Partitions: partitions,
 		}
 	}
 	return newMembers
@@ -207,8 +204,8 @@ func (s *Stream) updateMembers(ctx context.Context, newMembers Members) error {
 	return nil
 }
 
-func (s *Stream) sendControlMessage(ctx context.Context, changeInfo Members) error {
-	val, err := json.Marshal(changeInfo)
+func (s *Stream) sendControlMessage(ctx context.Context, members Members) error {
+	val, err := json.Marshal(members)
 	if err != nil {
 		return err
 	}
@@ -222,15 +219,11 @@ func (s *Stream) sendControlMessage(ctx context.Context, changeInfo Members) err
 }
 
 func (s *Stream) controlKey() string {
-	return fmt.Sprintf("__%s:__ctrl:%s", s.Ns, s.Name)
-}
-
-func (s *Stream) Start() {
-
+	return fmt.Sprintf("__%s:__%s:__ctrl", s.ns, s.name)
 }
 
 func (s *Stream) StartControlLoop() {
-	log.Printf("Control Loop Strted for stream: %s\n", s.Name)
+	log.Printf("Control Loop Strted for stream: %s\n", s.name)
 	lastMessageId := "$"
 	stream := s.controlKey()
 	ctx := context.Background()
@@ -269,12 +262,12 @@ func (s *Stream) StartControlLoop() {
 func (s *Stream) StartMaintenanceLoop() {
 	for {
 		ctx := context.Background()
-		lock, err := AcquireAdminLock(ctx, s.rdb, s.Ns, 100*time.Millisecond)
+		lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, s.name, 100*time.Millisecond)
 		if err != nil {
 			time.Sleep(maintenanceLoopInterval / 2)
 			continue
 		}
-		members, err := s.members(ctx)
+		members, err := s.members(ctx, "")
 		if err != nil {
 			_ = lock.Release(ctx)
 			time.Sleep(maintenanceLoopInterval / 2)
@@ -309,7 +302,7 @@ func (s *Stream) StartMaintenanceLoop() {
 func (s *Stream) CalculateDeadMembers(ctx context.Context, members Members) Members {
 	keys := make([]string, members.Len())
 	for i := 0; i < members.Len(); i++ {
-		keys[i] = members[i].heartBeatKey(s.Ns, s.Name)
+		keys[i] = members[i].heartBeatKey(s.ns, s.name)
 	}
 	res := s.rdb.MGet(ctx, keys...)
 	dead := make([]Member, 0)
@@ -319,4 +312,19 @@ func (s *Stream) CalculateDeadMembers(ctx context.Context, members Members) Memb
 		}
 	}
 	return dead
+}
+
+func (s *Stream) initializeGroup(ctx context.Context, group string) error {
+	for i := 0; i < s.pcount; i++ {
+		key := StreamKey(s.ns, s.name, Partition(i))
+		err := s.rdb.XGroupCreateMkStream(context.Background(), key, group, "$").Err()
+		if err != nil {
+			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
+				return nil
+			}
+			log.Printf("Error while registering Consumer, %v", err)
+			return err
+		}
+	}
+	return nil
 }

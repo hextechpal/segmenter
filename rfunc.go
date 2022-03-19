@@ -14,8 +14,8 @@ func AcquireLock(ctx context.Context, rdb *redis.Client, key string, ttl time.Du
 	return acquireLockWithRetry(ctx, rdb, key, ttl, metadata, 0)
 }
 
-func AcquireAdminLock(ctx context.Context, rdb *redis.Client, ns string, ttl time.Duration) (*redislock.Lock, error) {
-	return acquireLockWithRetry(ctx, rdb, adminKey(ns), ttl, "admin", 0)
+func AcquireAdminLock(ctx context.Context, rdb *redis.Client, ns string, name string, ttl time.Duration) (*redislock.Lock, error) {
+	return acquireLockWithRetry(ctx, rdb, adminKey(ns, name), ttl, "admin", 0)
 }
 
 func acquireLockWithRetry(ctx context.Context, rdb *redis.Client, key string, ttl time.Duration, metadata string, attempt int) (*redislock.Lock, error) {
@@ -40,6 +40,6 @@ func acquireLock(ctx context.Context, rdb *redis.Client, key string, ttl time.Du
 	return locker.Obtain(ctx, fmt.Sprintf("__lock:%s", key), ttl, opts)
 }
 
-func adminKey(ns string) string {
-	return fmt.Sprintf("__%s:admin", ns)
+func adminKey(ns string, name string) string {
+	return fmt.Sprintf("__%s:__%s:admin", ns, name)
 }

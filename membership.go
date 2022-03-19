@@ -11,6 +11,7 @@ type Member struct {
 	ConsumerId string     `json:"consumerId"`
 	JoinedAt   int64      `json:"joinedAt"`
 	Partitions Partitions `json:"partitions"`
+	Group      string     `json:"group"`
 }
 
 func (m Member) heartBeatKey(ns, stream string) string {
@@ -20,6 +21,7 @@ func (m Member) heartBeatKey(ns, stream string) string {
 type MemberChangeInfo struct {
 	Reason     Reason `json:"reason"`
 	ConsumerId string `json:"consumerId"`
+	Group      string `json:"group"`
 	Ts         int64  `json:"ts"`
 }
 
@@ -80,4 +82,14 @@ func (ms Members) RemoveAll(members Members) Members {
 		}
 	}
 	return removed
+}
+
+func (ms Members) FilterBy(group string) Members {
+	nMembers := make([]Member, 0)
+	for _, m := range ms {
+		if m.Group == group {
+			nMembers = append(nMembers, m)
+		}
+	}
+	return nMembers
 }
