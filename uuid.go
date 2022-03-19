@@ -1,4 +1,4 @@
-package common
+package segmenter
 
 import (
 	"encoding/base64"

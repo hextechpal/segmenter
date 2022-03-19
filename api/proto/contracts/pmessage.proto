@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/hextechpal/segmenter/internal/api/proto/contracts";
+option go_package = "github.com/hextechpal/segmenter/api/proto/contracts";
 
 message PMessage {
   map<string, string> metadata = 1;
