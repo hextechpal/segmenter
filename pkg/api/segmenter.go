@@ -84,7 +84,8 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error
 	if streamDTO == nil {
 		return nil, nil
 	}
-	s.streams[name] = NewStreamFromDTO(s.rdb, streamDTO)
+	stream = NewStreamFromDTO(s.rdb, streamDTO)
+	s.streams[name] = stream
 	return stream, nil
 }
 

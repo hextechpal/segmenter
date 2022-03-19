@@ -21,11 +21,14 @@ func main() {
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
-			_, err := s.RegisterConsumer(ctx, examples.StreamName, 10)
+			defer wg.Done()
+			c, err := s.RegisterConsumer(ctx, examples.StreamName, 10)
 			if err != nil {
 				log.Printf("Error happened while registering Consumer, %v", err)
+			} else {
+				log.Printf("Registered Consumer with id %s\n", c.GetID())
 			}
-			wg.Done()
+
 		}()
 	}
 	wg.Wait()
