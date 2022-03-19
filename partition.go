@@ -1,4 +1,4 @@
-package api
+package segmenter
 
 type Partition int
 

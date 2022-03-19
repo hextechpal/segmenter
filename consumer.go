@@ -1,12 +1,11 @@
-package api
+package segmenter
 
 import (
 	"context"
 	"fmt"
 	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/internal/api/proto/contracts"
-	"github.com/hextechpal/segmenter/internal/common"
+	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"log"
 	"sync"
 	"time"
@@ -28,7 +27,7 @@ type Consumer struct {
 func NewConsumer(ctx context.Context, rdb *redis.Client, batchSize int, stream string, ns string) (*Consumer, error) {
 	c := &Consumer{
 		rdb:       rdb,
-		id:        common.GenerateUuid(),
+		id:        GenerateUuid(),
 		batchSize: batchSize,
 		stream:    stream,
 		ns:        ns,
@@ -91,7 +90,7 @@ func (c *Consumer) RePartition(ctx context.Context, partitions Partitions) error
 
 	for _, p := range partitions {
 		if _, ok := c.locks[p]; !ok {
-			lock, err := common.AcquireLock(ctx, c.rdb, c.partitionKey(p), lockDuration, c.id)
+			lock, err := AcquireLock(ctx, c.rdb, c.partitionKey(p), lockDuration, c.id)
 			if err != nil {
 				log.Printf("[%s] [%s] [%s] Failed to Acquire lock with key %s, %v", c.ns, c.stream, c.id, c.partitionKey(p), err)
 				return err

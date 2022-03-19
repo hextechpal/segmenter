@@ -1,4 +1,4 @@
-package api
+package segmenter
 
 import "fmt"
 

@@ -1,12 +1,11 @@
-package api
+package segmenter
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/internal/api/proto/contracts"
-	"github.com/hextechpal/segmenter/internal/common"
+	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"log"
 	"math"
 	"sort"
@@ -68,7 +67,7 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 }
 
 func (s *Stream) getRedisStream(partitionKey string) string {
-	pc := int(common.Hash(partitionKey)) % s.Pcount
+	pc := int(Hash(partitionKey)) % s.Pcount
 	return fmt.Sprintf("__%s:__strm:%s_%d", s.Ns, s.Name, pc)
 }
 
@@ -111,7 +110,7 @@ func (s *Stream) join(ctx context.Context, c *Consumer) error {
 }
 
 func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) error {
-	lock, err := common.AcquireAdminLock(ctx, s.rdb, s.Ns, 1*time.Second)
+	lock, err := AcquireAdminLock(ctx, s.rdb, s.Ns, 1*time.Second)
 	if err != nil {
 		return err
 	}
@@ -150,7 +149,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) er
 }
 
 func (s *Stream) members(ctx context.Context) (Members, error) {
-	bytes, err := common.QueryKey(ctx, s.rdb, s.memberShipKey())
+	bytes, err := s.rdb.Get(ctx, s.memberShipKey()).Bytes()
 	if err == redis.Nil {
 		return []Member{}, nil
 	} else if err != nil {
@@ -270,7 +269,7 @@ func (s *Stream) StartControlLoop() {
 func (s *Stream) StartMaintenanceLoop() {
 	for {
 		ctx := context.Background()
-		lock, err := common.AcquireAdminLock(ctx, s.rdb, s.Ns, 100*time.Millisecond)
+		lock, err := AcquireAdminLock(ctx, s.rdb, s.Ns, 100*time.Millisecond)
 		if err != nil {
 			time.Sleep(maintenanceLoopInterval / 2)
 			continue

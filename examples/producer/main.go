@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"github.com/hextechpal/segmenter"
 	"github.com/hextechpal/segmenter/examples"
-	"github.com/hextechpal/segmenter/pkg/api"
 	"log"
 	"sync"
 	"time"
@@ -12,7 +12,7 @@ import (
 func main() {
 	ctx := context.TODO()
 
-	s, err := api.NewSegmenter(&api.Config{Address: "localhost:6379", Namespace: examples.Namespace})
+	s, err := segmenter.NewSegmenter(&segmenter.Config{Address: "localhost:6379", Namespace: examples.Namespace})
 	if err != nil {
 		log.Fatalf("Error occurred while initializing segmenter, %v", err)
 	}

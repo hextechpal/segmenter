@@ -1,4 +1,4 @@
-package common
+package segmenter
 
 import "hash/fnv"
 

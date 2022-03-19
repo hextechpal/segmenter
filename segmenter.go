@@ -1,4 +1,4 @@
-package api
+package segmenter
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/internal/common"
 	"sync"
 	"time"
 )
@@ -105,7 +104,7 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*StreamDTO
 }
 
 func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
-	lock, err := common.AcquireAdminLock(ctx, s.rdb, s.ns, 100*time.Millisecond)
+	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, 100*time.Millisecond)
 	if err != nil {
 		return err
 	}
