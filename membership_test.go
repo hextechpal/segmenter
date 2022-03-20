@@ -6,59 +6,6 @@ import (
 	"time"
 )
 
-func TestMember_heartBeatKey(t *testing.T) {
-	type fields struct {
-		ConsumerId string
-		JoinedAt   int64
-		Partitions Partitions
-		Group      string
-	}
-	type args struct {
-		ns     string
-		stream string
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   string
-	}{
-		{"Test1",
-			fields{
-				ConsumerId: "cid1",
-				JoinedAt:   time.Now().UnixMilli(),
-				Partitions: []Partition{Partition(1), Partition(2)},
-				Group:      "group1",
-			},
-			args{"ns", "stream1"},
-			"__ns:__stream1:__beat:cid1",
-		},
-		{"Test2",
-			fields{
-				ConsumerId: "cid2",
-				JoinedAt:   time.Now().UnixMilli(),
-				Partitions: []Partition{Partition(1), Partition(2)},
-				Group:      "group1",
-			},
-			args{"ns", "stream"},
-			"__ns:__stream:__beat:cid2",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := Member{
-				ConsumerId: tt.fields.ConsumerId,
-				JoinedAt:   tt.fields.JoinedAt,
-				Partitions: tt.fields.Partitions,
-				Group:      tt.fields.Group,
-			}
-			if got := m.heartBeatKey(tt.args.ns, tt.args.stream); got != tt.want {
-				t.Errorf("heartBeatKey() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMembers_Add(t *testing.T) {
 	type args struct {
 		member Member

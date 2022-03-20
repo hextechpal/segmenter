@@ -2,10 +2,8 @@ syntax = "proto3";
 
 option go_package = "github.com/hextechpal/segmenter/api/proto/contracts";
 
-import "google/protobuf/timestamp.proto";
-
-
 message CMessage {
   string id = 1;
-  bytes data = 2;
+  string pkey = 2;
+  bytes data = 3;
 }

@@ -29,11 +29,12 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	s := &Segmenter{rdb: rdb, ns: c.NameSpace, streams: make(map[string]*Stream)}
 	return s, nil
 }
 
-func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int) (*Consumer, error) {
+func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int, maxProcessingTime time.Duration) (*Consumer, error) {
 
 	if name == "" {
 		return nil, EmptyStreamName
@@ -53,7 +54,7 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 		// TODO handle the case when stream do not exist
 		return nil, errors.New("no Stream exist")
 	}
-	return stream.registerConsumer(ctx, group, batchSize)
+	return stream.registerConsumer(ctx, group, batchSize, maxProcessingTime)
 }
 
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {

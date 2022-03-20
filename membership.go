@@ -1,7 +1,5 @@
 package segmenter
 
-import "fmt"
-
 type Reason string
 
 const JOIN Reason = "JOIN"
@@ -12,10 +10,6 @@ type Member struct {
 	JoinedAt   int64      `json:"joinedAt"`
 	Partitions Partitions `json:"partitions"`
 	Group      string     `json:"group"`
-}
-
-func (m Member) heartBeatKey(ns, stream string) string {
-	return fmt.Sprintf("__%s:__%s:__beat:%s", ns, stream, m.ConsumerId)
 }
 
 type MemberChangeInfo struct {

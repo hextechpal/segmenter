@@ -43,3 +43,7 @@ func acquireLock(ctx context.Context, rdb *redis.Client, key string, ttl time.Du
 func adminKey(ns string, name string) string {
 	return fmt.Sprintf("__%s:__%s:admin", ns, name)
 }
+
+func heartBeatKey(ns, name, id string) string {
+	return fmt.Sprintf("__%s:%s:__beat:%s", ns, name, id)
+}
