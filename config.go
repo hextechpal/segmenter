@@ -1,8 +1,8 @@
 package segmenter
 
+import "github.com/go-redis/redis/v8"
+
 type Config struct {
-	Address   string
-	Namespace string
-	Username  string
-	Password  string
+	RedisOptions *redis.Options
+	NameSpace    string
 }

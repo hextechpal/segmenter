@@ -13,8 +13,6 @@ import (
 	"fmt"
 	"github.com/hextechpal/segmenter"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
-	"log"
-	"time"
 )
 
 func main() {

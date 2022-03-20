@@ -136,7 +136,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *MemberChangeInfo) er
 	if changeInfo.Reason == JOIN {
 		members = members.Add(newMember)
 	} else {
-		members = members.Remove(newMember)
+		members = members.Remove(newMember.ConsumerId)
 	}
 	sort.Sort(members)
 

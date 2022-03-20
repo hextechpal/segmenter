@@ -17,23 +17,19 @@ type Segmenter struct {
 	streams map[string]*Stream
 }
 
-var EmptyStreamName error = errors.New("stream name cannot be empty")
-var EmptyGroupName error = errors.New("group cannot be empty")
-var InvalidBatchSize error = errors.New("batch size cannot less than 1")
-var InvalidPartitionCount error = errors.New("partition count cannot less than 1")
-var InvalidPartitionSize error = errors.New("partition size cannot less than 1")
+var EmptyStreamName = errors.New("stream name cannot be empty")
+var EmptyGroupName = errors.New("group cannot be empty")
+var InvalidBatchSize = errors.New("batch size cannot less than 1")
+var InvalidPartitionCount = errors.New("partition count cannot less than 1")
+var InvalidPartitionSize = errors.New("partition size cannot less than 1")
 
 func NewSegmenter(c *Config) (*Segmenter, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     c.Address,
-		Username: c.Username,
-		Password: c.Password,
-	})
-	status := rdb.Ping(context.TODO())
-	if status.Err() != nil {
-		return nil, status.Err()
+	rdb := redis.NewClient(c.RedisOptions)
+	err := rdb.Ping(context.TODO()).Err()
+	if err != nil {
+		return nil, err
 	}
-	s := &Segmenter{rdb: rdb, ns: c.Namespace, streams: make(map[string]*Stream)}
+	s := &Segmenter{rdb: rdb, ns: c.NameSpace, streams: make(map[string]*Stream)}
 	return s, nil
 }
 

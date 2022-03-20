@@ -15,7 +15,7 @@ type Member struct {
 }
 
 func (m Member) heartBeatKey(ns, stream string) string {
-	return fmt.Sprintf("__%s:%s:__beat:%s", ns, stream, m.ConsumerId)
+	return fmt.Sprintf("__%s:__%s:__beat:%s", ns, stream, m.ConsumerId)
 }
 
 type MemberChangeInfo struct {
@@ -40,23 +40,18 @@ func (ms Members) Add(member Member) Members {
 	return append(ms, member)
 }
 
-func (ms Members) Remove(member Member) Members {
-	idx := -1
-	for i, m := range ms {
-		if m.ConsumerId == member.ConsumerId {
-			idx = i
-		}
-	}
-	return append(ms[:idx], ms[idx+1:]...)
-}
-
-func (ms Members) RemoveById(mid string) Members {
+func (ms Members) Remove(mid string) Members {
 	idx := -1
 	for i, m := range ms {
 		if m.ConsumerId == mid {
 			idx = i
 		}
 	}
+
+	if idx < 0 {
+		return ms
+	}
+
 	return append(ms[:idx], ms[idx+1:]...)
 }
 

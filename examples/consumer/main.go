@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter"
 	"github.com/hextechpal/segmenter/examples"
 	"log"
@@ -15,7 +16,11 @@ func main() {
 	rand.Seed(time.Now().UnixMilli())
 	gn := rand.Intn(10)
 	ctx := context.TODO()
-	s, err := segmenter.NewSegmenter(&segmenter.Config{Address: "localhost:6379", Namespace: examples.Namespace})
+	c := segmenter.Config{
+		RedisOptions: &redis.Options{Addr: "localhost:6379"},
+		NameSpace:    examples.Namespace,
+	}
+	s, err := segmenter.NewSegmenter(&c)
 	if err != nil {
 		log.Fatalf("Error occurred while initializing segmenter, %v", err)
 	}
