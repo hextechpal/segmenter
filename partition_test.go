@@ -4,36 +4,36 @@ import "testing"
 
 func TestPartitions_contains(t *testing.T) {
 	type args struct {
-		t Partition
+		t partition
 	}
 	tests := []struct {
 		name string
-		p    Partitions
+		p    partitions
 		args args
 		want bool
 	}{
 		{
-			name: "Test1 - Partition present",
-			p:    []Partition{Partition(1), Partition(2), Partition(3)},
-			args: args{Partition(1)},
+			name: "Test1 - partition present",
+			p:    []partition{partition(1), partition(2), partition(3)},
+			args: args{partition(1)},
 			want: true,
 		},
 		{
-			name: "Test2 - Partition Absent",
-			p:    []Partition{Partition(1), Partition(2), Partition(3)},
-			args: args{Partition(4)},
+			name: "Test2 - partition Absent",
+			p:    []partition{partition(1), partition(2), partition(3)},
+			args: args{partition(4)},
 			want: false,
 		},
 		{
-			name: "Test3 - Empty Partitions",
-			p:    []Partition{},
-			args: args{Partition(4)},
+			name: "Test3 - Empty partitions",
+			p:    []partition{},
+			args: args{partition(4)},
 			want: false,
 		},
 		{
-			name: "Test3 - Nil Partitions",
+			name: "Test3 - Nil partitions",
 			p:    nil,
-			args: args{Partition(4)},
+			args: args{partition(4)},
 			want: false,
 		},
 	}

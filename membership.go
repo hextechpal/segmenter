@@ -2,24 +2,24 @@ package segmenter
 
 type Reason string
 
-const JOIN Reason = "JOIN"
-const LEAVE Reason = "LEAVE"
+const join Reason = "join"
+const leave Reason = "leave"
 
-type Member struct {
+type member struct {
 	ConsumerId string     `json:"consumerId"`
 	JoinedAt   int64      `json:"joinedAt"`
-	Partitions Partitions `json:"partitions"`
+	Partitions partitions `json:"partitions"`
 	Group      string     `json:"group"`
 }
 
-type MemberChangeInfo struct {
+type memberChangeInfo struct {
 	Reason     Reason `json:"reason"`
 	ConsumerId string `json:"consumerId"`
 	Group      string `json:"group"`
 	Ts         int64  `json:"ts"`
 }
 
-type Members []Member
+type Members []member
 
 func (ms Members) Contains(memberId string) bool {
 	for _, m := range ms {
@@ -30,7 +30,7 @@ func (ms Members) Contains(memberId string) bool {
 	return false
 }
 
-func (ms Members) Add(member Member) Members {
+func (ms Members) Add(member member) Members {
 	return append(ms, member)
 }
 
@@ -62,7 +62,7 @@ func (ms Members) Swap(i, j int) {
 }
 
 func (ms Members) RemoveAll(members Members) Members {
-	removed := make([]Member, ms.Len()-members.Len())
+	removed := make([]member, ms.Len()-members.Len())
 	idx := 0
 	for _, m := range ms {
 		if !members.Contains(m.ConsumerId) {
@@ -74,7 +74,7 @@ func (ms Members) RemoveAll(members Members) Members {
 }
 
 func (ms Members) FilterBy(group string) Members {
-	nMembers := make([]Member, 0)
+	nMembers := make([]member, 0)
 	for _, m := range ms {
 		if m.Group == group {
 			nMembers = append(nMembers, m)

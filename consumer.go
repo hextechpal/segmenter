@@ -19,7 +19,7 @@ type Consumer struct {
 	mu                sync.Mutex
 	rdb               *redis.Client
 	s                 *Stream
-	locks             map[Partition]*redislock.Lock
+	locks             map[partition]*redislock.Lock
 	id                string
 	batchSize         int
 	group             string
@@ -30,12 +30,12 @@ type Consumer struct {
 func NewConsumer(ctx context.Context, stream *Stream, batchSize int, group string, maxProcessingTime time.Duration) (*Consumer, error) {
 	c := &Consumer{
 		rdb:               stream.rdb,
-		id:                GenerateUuid(),
+		id:                generateUuid(),
 		batchSize:         batchSize,
 		s:                 stream,
 		group:             group,
 		maxProcessingTime: maxProcessingTime,
-		locks:             make(map[Partition]*redislock.Lock),
+		locks:             make(map[partition]*redislock.Lock),
 		active:            true,
 	}
 	err := c.initiateHeartBeat(ctx)
@@ -70,10 +70,10 @@ func (c *Consumer) beat() {
 	}
 }
 
-func (c *Consumer) RePartition(ctx context.Context, partitions Partitions) error {
+func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	toBeReleased := make([]Partition, 0)
+	toBeReleased := make([]partition, 0)
 	for p := range c.locks {
 		if !partitions.contains(p) {
 			toBeReleased = append(toBeReleased, p)
@@ -99,7 +99,7 @@ func (c *Consumer) RePartition(ctx context.Context, partitions Partitions) error
 	return nil
 }
 
-func (c *Consumer) partitionKey(p Partition) string {
+func (c *Consumer) partitionKey(p partition) string {
 	return fmt.Sprintf("__%s:%s_%d", c.s.ns, c.s.name, p)
 }
 
@@ -123,7 +123,7 @@ func (c *Consumer) buildStreamsKey() []string {
 	i := 0
 	streams := make([]string, 2*len(c.locks))
 	for k, _ := range c.locks {
-		streams[i] = StreamKey(c.s.ns, c.s.name, k)
+		streams[i] = streamKey(c.s.ns, c.s.name, k)
 		streams[i+len(c.locks)] = ">"
 		i += 1
 	}
@@ -134,7 +134,7 @@ func (c *Consumer) assignedStreams() []string {
 	i := 0
 	streams := make([]string, len(c.locks))
 	for k := range c.locks {
-		streams[i] = StreamKey(c.s.ns, c.s.name, k)
+		streams[i] = streamKey(c.s.ns, c.s.name, k)
 		i += 1
 	}
 	return streams

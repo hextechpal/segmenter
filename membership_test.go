@@ -8,7 +8,7 @@ import (
 
 func TestMembers_Add(t *testing.T) {
 	type args struct {
-		member Member
+		member member
 	}
 	tests := []struct {
 		name string
@@ -18,20 +18,20 @@ func TestMembers_Add(t *testing.T) {
 	}{
 		{
 			name: "Test1",
-			ms:   []Member{},
+			ms:   []member{},
 			args: args{
-				member: Member{
+				member: member{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
-			want: []Member{
+			want: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -57,12 +57,12 @@ func TestMembers_Contains(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "Test1 - Member exist",
-			ms: []Member{
+			name: "Test1 - member exist",
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -70,12 +70,12 @@ func TestMembers_Contains(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "Test2 - Member do not exist",
-			ms: []Member{
+			name: "Test2 - member do not exist",
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -84,7 +84,7 @@ func TestMembers_Contains(t *testing.T) {
 		},
 		{
 			name: "Test3 - Empty Members",
-			ms:   []Member{},
+			ms:   []member{},
 			args: args{memberId: "cid2"},
 			want: false,
 		},
@@ -109,37 +109,37 @@ func TestMembers_FilterBy(t *testing.T) {
 		want Members
 	}{
 		{
-			name: "Test1 - Member exist",
-			ms: []Member{
+			name: "Test1 - member exist",
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
 			args: args{group: "group1"},
-			want: []Member{
+			want: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "Test2 - Member do not exist",
-			ms: []Member{
+			name: "Test2 - member do not exist",
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
 			args: args{group: "group2"},
-			want: []Member{},
+			want: []member{},
 		},
 	}
 	for _, tt := range tests {
@@ -163,37 +163,37 @@ func TestMembers_RemoveAll(t *testing.T) {
 	}{
 		{
 			name: "Test1",
-			ms: []Member{
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ConsumerId: "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
 			args: args{
-				members: []Member{
+				members: []member{
 					{
 						ConsumerId: "cid1",
 						JoinedAt:   time.Now().UnixMilli(),
-						Partitions: []Partition{Partition(1), Partition(2)},
+						Partitions: []partition{partition(1), partition(2)},
 						Group:      "group1",
 					},
 					{
 						ConsumerId: "cid2",
 						JoinedAt:   time.Now().UnixMilli(),
-						Partitions: []Partition{Partition(3), Partition(4)},
+						Partitions: []partition{partition(3), partition(4)},
 						Group:      "group1",
 					},
 				},
 			},
-			want: []Member{},
+			want: []member{},
 		},
 	}
 	for _, tt := range tests {
@@ -217,64 +217,64 @@ func TestMembers_Remove(t *testing.T) {
 	}{
 		{
 			name: "Test1",
-			ms: []Member{
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ConsumerId: "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
 			args: args{mid: "cid2"},
-			want: []Member{
+			want: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
 			name: "Test2 - Empty Members",
-			ms:   []Member{},
+			ms:   []member{},
 			args: args{mid: "cid2"},
-			want: []Member{},
+			want: []member{},
 		},
 		{
-			name: "Test3 - Member do no exist",
-			ms: []Member{
+			name: "Test3 - member do no exist",
+			ms: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ConsumerId: "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
 			args: args{mid: "cid3"},
-			want: []Member{
+			want: []member{
 				{
 					ConsumerId: "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ConsumerId: "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},

@@ -1,10 +1,10 @@
 package segmenter
 
-type Partition int
+type partition int
 
-type Partitions []Partition
+type partitions []partition
 
-func (p Partitions) contains(t Partition) bool {
+func (p partitions) contains(t partition) bool {
 	for _, el := range p {
 		if el == t {
 			return true

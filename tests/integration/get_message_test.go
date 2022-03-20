@@ -32,7 +32,7 @@ func TestGetMessages(t *testing.T) {
 
 	// Sending 20 messages in the stream that will be divided across partitions
 	for i := 0; i < 20; i++ {
-		uuid := segmenter.GenerateUuid()
+		uuid := fmt.Sprintf("uuid_%d", rand.Intn(1000))
 		id, err := st.Send(context.TODO(), &contracts.PMessage{
 			Data:         []byte(fmt.Sprintf("Message with uuid : %s", uuid)),
 			PartitionKey: uuid,

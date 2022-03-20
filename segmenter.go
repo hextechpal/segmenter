@@ -84,12 +84,12 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
-		stream = NewStreamFromDTO(s.rdb, streamDTO)
+		stream = newStreamFromDTO(s.rdb, streamDTO)
 		s.streams[stream.name] = stream
 		return stream, nil
 	}
 
-	stream = NewStream(s.rdb, s.ns, name, pcount, psize)
+	stream = newStream(s.rdb, s.ns, name, pcount, psize)
 	err = s.saveStream(ctx, name, stream)
 	if err != nil {
 		return nil, err
@@ -110,19 +110,19 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error
 	if streamDTO == nil {
 		return nil, nil
 	}
-	stream = NewStreamFromDTO(s.rdb, streamDTO)
+	stream = newStreamFromDTO(s.rdb, streamDTO)
 	s.streams[name] = stream
 	return stream, nil
 }
 
-func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*StreamDTO, error) {
-	res, err := s.rdb.Get(ctx, s.streamKey(name)).Bytes()
+func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO, error) {
+	res, err := s.rdb.Get(ctx, s.streamStorageKey(name)).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
 	}
-	var st StreamDTO
+	var st streamDTO
 	err = json.Unmarshal(res, &st)
 	if err != nil {
 		return nil, err
@@ -136,14 +136,14 @@ func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream)
 		return err
 	}
 	defer lock.Release(ctx)
-	streamDTO := NewStreamDTO(stream)
+	streamDTO := newStreamDTO(stream)
 	val, err := json.Marshal(streamDTO)
 	if err != nil {
 		return err
 	}
-	return s.rdb.Set(ctx, s.streamKey(name), val, 0).Err()
+	return s.rdb.Set(ctx, s.streamStorageKey(name), val, 0).Err()
 }
 
-func (s *Segmenter) streamKey(name string) string {
+func (s *Segmenter) streamStorageKey(name string) string {
 	return fmt.Sprintf("__%s:__strm:%s", s.ns, name)
 }

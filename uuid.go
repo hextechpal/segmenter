@@ -5,7 +5,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func GenerateUuid() string {
+func generateUuid() string {
 	id := uuid.New()
 	return base64.RawURLEncoding.EncodeToString(id[:])
 }
