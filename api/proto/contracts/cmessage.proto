@@ -4,6 +4,6 @@ option go_package = "github.com/hextechpal/segmenter/api/proto/contracts";
 
 message CMessage {
   string id = 1;
-  string pkey = 2;
+  string partition_key = 2;
   bytes data = 3;
 }

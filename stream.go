@@ -66,8 +66,8 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 		Stream: s.getRedisStream(m.GetPartitionKey()),
 		MaxLen: s.psize,
 		Values: map[string]interface{}{
-			"data": data,
-			"pkey": m.GetPartitionKey(),
+			"data":         data,
+			"partitionKey": m.GetPartitionKey(),
 		},
 	})
 	return r.Result()

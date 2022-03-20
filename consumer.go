@@ -158,6 +158,10 @@ func (c *Consumer) GetMessages(ctx context.Context, maxWaitDuration time.Duratio
 	return claimed, nil
 }
 
+func (c *Consumer) AckMessages(ctx context.Context, cmessage *contracts.CMessage) error {
+	return c.rdb.XAck(ctx, c.s.getRedisStream(cmessage.PartitionKey), c.group, cmessage.Id).Err()
+}
+
 type pendingResponse struct {
 	err        error
 	stream     string
@@ -167,6 +171,7 @@ type pendingResponse struct {
 func (c *Consumer) getPendingEntries(ctx context.Context) map[string][]string {
 	pending := make(map[string][]string)
 	streams := c.assignedStreams()
+	log.Printf("[%s] Consumer reading pending messages from streams %v\n", c.id, streams)
 	ch := make(chan *pendingResponse)
 	for _, stream := range streams {
 		go c.pendingEntriesForStream(ctx, ch, stream)
@@ -178,7 +183,9 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[string][]string {
 			log.Printf("error while executing pending command, %v\n", pr.err)
 			continue
 		}
-		pending[pr.stream] = pr.messageIds
+		if len(pr.messageIds) > 0 {
+			pending[pr.stream] = pr.messageIds
+		}
 	}
 	return pending
 }
@@ -229,6 +236,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 	if len(streamsKey) == 0 {
 		return []*contracts.CMessage{}, nil
 	}
+	log.Printf("[%s] Consumer reading pending messages from streams %v\n", c.id, streamsKey)
 	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
@@ -317,9 +325,9 @@ func mapXMessageToCMessage(msgs []redis.XMessage) []*contracts.CMessage {
 	cmessages := make([]*contracts.CMessage, 0)
 	for _, m := range msgs {
 		cm := contracts.CMessage{
-			Id:   m.ID,
-			Pkey: m.Values["pkey"].(string),
-			Data: []byte(m.Values["data"].(string)),
+			Id:           m.ID,
+			PartitionKey: m.Values["partitionKey"].(string),
+			Data:         []byte(m.Values["data"].(string)),
 		}
 		cmessages = append(cmessages, &cm)
 	}
