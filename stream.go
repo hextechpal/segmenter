@@ -76,17 +76,15 @@ func (s *Stream) getRedisStream(partitionKey string) string {
 
 // RegisterConsumer : Will a redis consumer with the specified consumer group
 // This will cause a partitioning re-balancing
-func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int, maxProcessingTime time.Duration) (*Consumer, error) {
+func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	c, err := NewConsumer(ctx, s, batchSize, group, maxProcessingTime)
 	if err != nil {
 		return nil, err
 	}
-	err = s.initializeGroup(ctx, group)
-	if err != nil {
-		return nil, err
-	}
+
 	err = s.join(ctx, c)
 	if err != nil {
 		return nil, err
@@ -321,21 +319,6 @@ func (s *Stream) calculateDeadMembers(ctx context.Context, members Members) Memb
 		}
 	}
 	return dead
-}
-
-func (s *Stream) initializeGroup(ctx context.Context, group string) error {
-	for i := 0; i < s.pcount; i++ {
-		key := streamKey(s.ns, s.name, partition(i))
-		err := s.rdb.XGroupCreateMkStream(ctx, key, group, "$").Err()
-		if err != nil {
-			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
-				return nil
-			}
-			log.Printf("Error while registering Consumer, %v", err)
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Stream) shutDownConsumer(ctx context.Context, consumerId string) error {

@@ -3,8 +3,6 @@ package segmenter
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"log"
@@ -13,21 +11,21 @@ import (
 )
 
 const heartBeatDuration = 2 * time.Second
-const lockDuration = 10 * time.Second
 
 type Consumer struct {
 	mu                sync.Mutex
 	rdb               *redis.Client
 	s                 *Stream
-	locks             map[partition]*redislock.Lock
 	id                string
-	batchSize         int
+	batchSize         int64
 	group             string
 	maxProcessingTime time.Duration
+	segmentMap        map[partition]*segment
+	shutDown          chan bool
 	active            bool
 }
 
-func NewConsumer(ctx context.Context, stream *Stream, batchSize int, group string, maxProcessingTime time.Duration) (*Consumer, error) {
+func NewConsumer(_ context.Context, stream *Stream, batchSize int64, group string, maxProcessingTime time.Duration) (*Consumer, error) {
 	c := &Consumer{
 		rdb:               stream.rdb,
 		id:                generateUuid(),
@@ -35,15 +33,11 @@ func NewConsumer(ctx context.Context, stream *Stream, batchSize int, group strin
 		s:                 stream,
 		group:             group,
 		maxProcessingTime: maxProcessingTime,
-		locks:             make(map[partition]*redislock.Lock),
+		segmentMap:        make(map[partition]*segment),
 		active:            true,
-	}
-	err := c.initiateHeartBeat(ctx)
-	if err != nil {
-		return nil, err
+		shutDown:          make(chan bool),
 	}
 	go c.beat()
-	go c.refreshLocks()
 	return c, nil
 }
 
@@ -60,11 +54,17 @@ func (c *Consumer) initiateHeartBeat(ctx context.Context) error {
 }
 
 func (c *Consumer) beat() {
-	for c.active {
-		set := c.rdb.Set(context.Background(), heartBeatKey(c.s.ns, c.s.name, c.id), time.Now().UnixMilli(), heartBeatDuration)
-		if set.Err() != nil {
-			log.Printf("Error occured while refreshing heartbeat")
-			time.Sleep(100 * time.Millisecond)
+	ctx := context.Background()
+	for {
+		select {
+		case <-c.shutDown:
+			return
+		default:
+			set := c.rdb.Set(ctx, heartBeatKey(c.s.ns, c.s.name, c.id), time.Now().UnixMilli(), heartBeatDuration)
+			if set.Err() != nil {
+				log.Printf("Error occured while refreshing heartbeat")
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 		time.Sleep(heartBeatDuration)
 	}
@@ -74,67 +74,42 @@ func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	toBeReleased := make([]partition, 0)
-	for p := range c.locks {
+	for p := range c.segmentMap {
 		if !partitions.contains(p) {
 			toBeReleased = append(toBeReleased, p)
 		}
 	}
+	log.Printf("[%s] Need to Shutdown partitions : %v\n", c.id, toBeReleased)
+
 	for _, p := range toBeReleased {
-		log.Printf("[%s] [%s] [%s] Releasing lock with key %s", c.s.ns, c.s.name, c.id, c.locks[p].Key())
-		_ = c.locks[p].Release(ctx)
-		delete(c.locks, p)
+		c.segmentMap[p].ShutDown()
+		delete(c.segmentMap, p)
 	}
+
+	log.Printf("[%s] Partions shut down Sucessfully : %v\n", c.id, toBeReleased)
 
 	for _, p := range partitions {
-		if _, ok := c.locks[p]; !ok {
-			lock, err := acquireLock(ctx, c.rdb, c.partitionKey(p), lockDuration, c.id)
+		if _, ok := c.segmentMap[p]; !ok {
+			log.Printf("[%s] Creating segment for partion : %v\n", c.id, p)
+			sg, err := newSegment(ctx, c, p)
 			if err != nil {
-				log.Printf("[%s] [%s] [%s] Failed to Acquire lock with key %s, %v", c.s.ns, c.s.name, c.id, c.partitionKey(p), err)
 				return err
 			}
-			c.locks[p] = lock
-			log.Printf("[%s] [%s] [%s] Acquired lock with key %s", c.s.ns, c.s.name, c.id, c.partitionKey(p))
+			c.segmentMap[p] = sg
+			log.Printf("[%s] Created segment for partion : %v\n", c.id, p)
 		}
 	}
+	log.Printf("[%s] Rebalance Completed\n", c.id)
 	return nil
-}
-
-func (c *Consumer) partitionKey(p partition) string {
-	return fmt.Sprintf("__%s:%s_%d", c.s.ns, c.s.name, p)
-}
-
-func (c *Consumer) refreshLocks() {
-	log.Printf("[%s] [%s] [%s] Refresh Lock loop Initiated", c.s.ns, c.s.name, c.id)
-	ctx := context.Background()
-	for c.active {
-		c.mu.Lock()
-		for _, lock := range c.locks {
-			err := lock.Refresh(ctx, lockDuration, nil)
-			if err != nil {
-				log.Printf("Error happened while refreshing lock %s Consumer %s, %v", lock.Key(), lock.Metadata(), err)
-			}
-		}
-		c.mu.Unlock()
-		time.Sleep(1000 * time.Millisecond)
-	}
 }
 
 func (c *Consumer) buildStreamsKey() []string {
 	i := 0
-	streams := make([]string, 2*len(c.locks))
-	for k, _ := range c.locks {
-		streams[i] = streamKey(c.s.ns, c.s.name, k)
-		streams[i+len(c.locks)] = ">"
-		i += 1
-	}
-	return streams
-}
-
-func (c *Consumer) assignedStreams() []string {
-	i := 0
-	streams := make([]string, len(c.locks))
-	for k := range c.locks {
-		streams[i] = streamKey(c.s.ns, c.s.name, k)
+	segmentCount := len(c.segmentMap)
+	streams := make([]string, 2*segmentCount)
+	for _, sg := range c.segmentMap {
+		streams[i] = sg.partitionedStream()
+		streams[i+segmentCount] = ">"
 		i += 1
 	}
 	return streams
@@ -164,84 +139,41 @@ func (c *Consumer) AckMessages(ctx context.Context, cmessage *contracts.CMessage
 
 type pendingResponse struct {
 	err        error
-	stream     string
+	partition  partition
 	messageIds []string
 }
 
-func (c *Consumer) getPendingEntries(ctx context.Context) map[string][]string {
-	pending := make(map[string][]string)
-	streams := c.assignedStreams()
-	log.Printf("[%s] Consumer reading pending messages from streams %v\n", c.id, streams)
+func (c *Consumer) getPendingEntries(ctx context.Context) map[partition][]string {
+	pending := make(map[partition][]string)
 	ch := make(chan *pendingResponse)
-	for _, stream := range streams {
-		go c.pendingEntriesForStream(ctx, ch, stream)
+	for _, sg := range c.segmentMap {
+		go sg.pendingEntries(ctx, ch)
 	}
 
-	for i := 0; i < len(streams); i++ {
+	for i := 0; i < len(c.segmentMap); i++ {
 		pr := <-ch
 		if pr.err != nil {
 			log.Printf("error while executing pending command, %v\n", pr.err)
 			continue
 		}
 		if len(pr.messageIds) > 0 {
-			pending[pr.stream] = pr.messageIds
+			pending[pr.partition] = pr.messageIds
 		}
 	}
 	return pending
 }
 
-func (c *Consumer) pendingEntriesForStream(ctx context.Context, ch chan *pendingResponse, stream string) {
-	pending, err := c.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
-		Stream: stream,
-		Group:  c.group,
-		Idle:   c.maxProcessingTime,
-		Start:  "-",
-		End:    "+",
-		Count:  int64(c.batchSize),
-	}).Result()
-
-	if err == redis.Nil {
-		ch <- &pendingResponse{
-			err:        nil,
-			stream:     stream,
-			messageIds: []string{},
-		}
-		return
-	}
-
-	if err != nil {
-		ch <- &pendingResponse{
-			err:        err,
-			stream:     stream,
-			messageIds: nil,
-		}
-	}
-
-	//TODO handle retry count
-	messageIds := make([]string, 0)
-	for _, xp := range pending {
-		messageIds = append(messageIds, xp.ID)
-	}
-
-	ch <- &pendingResponse{
-		err:        nil,
-		stream:     stream,
-		messageIds: messageIds,
-	}
-
-}
-
 func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
-	streamsKey := c.buildStreamsKey()
-	if len(streamsKey) == 0 {
+	if len(c.segmentMap) == 0 {
 		return []*contracts.CMessage{}, nil
 	}
+	streamsKey := c.buildStreamsKey()
 	log.Printf("[%s] Consumer reading pending messages from streams %v\n", c.id, streamsKey)
 	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
 		Streams:  c.buildStreamsKey(),
-		Count:    int64(c.batchSize),
+		Count:    c.batchSize,
 		Block:    maxWaitDuration,
 	}).Result()
 
@@ -257,16 +189,17 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 }
 
 type claimResponse struct {
-	err      error
-	stream   string
-	messages []*contracts.CMessage
+	err       error
+	partition partition
+	messages  []*contracts.CMessage
 }
 
-func (c *Consumer) claimEntries(ctx context.Context, entries map[string][]string) []*contracts.CMessage {
+func (c *Consumer) claimEntries(ctx context.Context, entries map[partition][]string) []*contracts.CMessage {
 	messages := make([]*contracts.CMessage, 0)
 	ch := make(chan *claimResponse)
-	for stream, ids := range entries {
-		go c.claimEntriesForStream(ctx, ch, stream, ids)
+	for partition, ids := range entries {
+		sg := c.segmentMap[partition]
+		go sg.claimEntries(ctx, ch, ids)
 	}
 
 	for i := 0; i < len(entries); i++ {
@@ -278,39 +211,6 @@ func (c *Consumer) claimEntries(ctx context.Context, entries map[string][]string
 		messages = append(messages, cr.messages...)
 	}
 	return messages
-}
-
-func (c *Consumer) claimEntriesForStream(ctx context.Context, ch chan *claimResponse, stream string, ids []string) {
-	result, err := c.rdb.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   stream,
-		Group:    c.group,
-		Consumer: c.id,
-		Messages: ids,
-	}).Result()
-
-	if err == redis.Nil {
-		ch <- &claimResponse{
-			err:      nil,
-			stream:   stream,
-			messages: []*contracts.CMessage{},
-		}
-		return
-	}
-
-	if err != nil {
-		ch <- &claimResponse{
-			err:      err,
-			stream:   stream,
-			messages: nil,
-		}
-		return
-	}
-
-	ch <- &claimResponse{
-		err:      nil,
-		stream:   stream,
-		messages: mapXMessageToCMessage(result),
-	}
 }
 
 func mapXStreamToCMessage(result []redis.XStream) []*contracts.CMessage {
@@ -337,8 +237,8 @@ func mapXMessageToCMessage(msgs []redis.XMessage) []*contracts.CMessage {
 func (c *Consumer) ShutDown(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, lock := range c.locks {
-		_ = lock.Release(ctx)
+	for _, sg := range c.segmentMap {
+		sg.ShutDown()
 	}
 	err := c.s.shutDownConsumer(ctx, c.GetID())
 	if err != nil {

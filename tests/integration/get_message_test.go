@@ -143,4 +143,6 @@ func TestGetMessages(t *testing.T) {
 		ids += m.Id + "|"
 	}
 	log.Printf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), ids)
+
+	time.Sleep(3 * time.Minute)
 }
