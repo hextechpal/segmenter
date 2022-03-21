@@ -47,17 +47,13 @@ type Stream struct {
 
 func newStream(rdb *redis.Client, ns string, name string, pcount int, psize int64) *Stream {
 	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize, consumers: make(map[string]*Consumer)}
-	s.start()
+	go s.controlLoop()
+	go s.maintenanceLoop()
 	return s
 }
 
 func newStreamFromDTO(rdb *redis.Client, dto *streamDTO) *Stream {
 	return newStream(rdb, dto.Ns, dto.Name, dto.Pcount, dto.Psize)
-}
-
-func (s *Stream) start() {
-	go s.controlLoop()
-	go s.maintenanceLoop()
 }
 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
