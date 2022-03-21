@@ -131,7 +131,7 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO
 }
 
 func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
-	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, "", 100*time.Millisecond)
+	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, "", 100*time.Millisecond)
 	if err != nil {
 		return err
 	}

@@ -109,7 +109,7 @@ func (s *Stream) join(ctx context.Context, c *Consumer) error {
 }
 
 func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) error {
-	lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, s.name, 1*time.Second)
+	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, s.name, 1*time.Second)
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func (s *Stream) controlLoop() {
 func (s *Stream) maintenanceLoop() {
 	for {
 		ctx := context.Background()
-		lock, err := AcquireAdminLock(ctx, s.rdb, s.ns, s.name, 100*time.Millisecond)
+		lock, err := acquireAdminLock(ctx, s.rdb, s.ns, s.name, 100*time.Millisecond)
 		if err != nil {
 			time.Sleep(maintenanceLoopInterval / 2)
 			continue

@@ -87,7 +87,7 @@ func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error
 
 	for _, p := range partitions {
 		if _, ok := c.locks[p]; !ok {
-			lock, err := AcquireLock(ctx, c.rdb, c.partitionKey(p), lockDuration, c.id)
+			lock, err := acquireLock(ctx, c.rdb, c.partitionKey(p), lockDuration, c.id)
 			if err != nil {
 				log.Printf("[%s] [%s] [%s] Failed to Acquire lock with key %s, %v", c.s.ns, c.s.name, c.id, c.partitionKey(p), err)
 				return err
