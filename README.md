@@ -5,14 +5,18 @@ the messages belonging to single segment is processed in order on a single consu
 
 The usage is 
 
-```
+```go
 package main
 
 import (
 	"context"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
+	"log"
+	"math/rand"
+	"time"
 )
 
 func main() {
