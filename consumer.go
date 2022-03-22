@@ -40,14 +40,61 @@ func NewConsumer(ctx context.Context, stream *Stream, batchSize int64, group str
 		shutDown:          make(chan bool),
 	}
 
-	lastId, err := c.getLatestControlMessageId(ctx)
+	err := c.startControlLoop(ctx)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[%s] Received lastId as %s", c.id, lastId)
+
+	err = c.join(ctx)
+	if err != nil {
+		return nil, err
+	}
 	go c.beat()
-	go c.controlLoop(lastId)
 	return c, nil
+}
+
+func (c *Consumer) join(ctx context.Context) error {
+	return c.rebalance(ctx, &memberChangeInfo{
+		Reason:     join,
+		Group:      c.group,
+		ConsumerId: c.id,
+		Ts:         time.Now().UnixMilli(),
+	})
+}
+
+func (c *Consumer) rebalance(ctx context.Context, changeInfo *memberChangeInfo) error {
+	lock, err := acquireAdminLock(ctx, c.rdb, c.GetNameSpace(), c.GetStreamName(), 1*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.Release(ctx)
+
+	members, err := c.s.members(ctx, changeInfo.Group)
+	if err != nil {
+		return err
+	}
+
+	if changeInfo.Reason == join && members.Contains(changeInfo.ConsumerId) {
+		return nil
+	}
+
+	if changeInfo.Reason == leave && !members.Contains(changeInfo.ConsumerId) {
+		return nil
+	}
+
+	// Add and sort members
+	newMember := member{
+		ConsumerId: changeInfo.ConsumerId,
+		JoinedAt:   changeInfo.Ts,
+		Group:      changeInfo.Group,
+	}
+	if changeInfo.Reason == join {
+		members = members.Add(newMember)
+	} else {
+		members = members.Remove(newMember.ConsumerId)
+	}
+
+	return c.s.updateMembers(ctx, members)
 }
 
 func (c *Consumer) GetID() string {
@@ -58,10 +105,6 @@ func (c *Consumer) GetStreamName() string {
 	return c.s.name
 }
 
-func (c *Consumer) initiateHeartBeat(ctx context.Context) error {
-	return c.rdb.Set(ctx, heartBeatKey(c.s.ns, c.s.name, c.id), time.Now().UnixMilli(), heartBeatDuration).Err()
-}
-
 func (c *Consumer) beat() {
 	ctx := context.Background()
 	for {
@@ -69,7 +112,7 @@ func (c *Consumer) beat() {
 		case <-c.shutDown:
 			return
 		default:
-			set := c.rdb.Set(ctx, heartBeatKey(c.s.ns, c.s.name, c.id), time.Now().UnixMilli(), heartBeatDuration)
+			set := c.rdb.Set(ctx, heartBeatKey(c.GetNameSpace(), c.GetStreamName(), c.id), time.Now().UnixMilli(), heartBeatDuration)
 			if set.Err() != nil {
 				log.Printf("Error occured while refreshing heartbeat")
 				time.Sleep(100 * time.Millisecond)
@@ -255,21 +298,6 @@ func (c *Consumer) ShutDown() error {
 	c.shutDown <- true
 	return nil
 }
-
-func (c *Consumer) getLatestControlMessageId(ctx context.Context) (string, error) {
-	result, err := c.rdb.XRevRangeN(ctx, c.s.controlKey(), "+", "-", 1).Result()
-
-	if err != nil && err != redis.Nil {
-		return "", err
-	}
-
-	if err == redis.Nil || len(result) == 0 {
-		return "0-0", nil
-	}
-
-	return result[0].ID, nil
-
-}
 func (c *Consumer) controlLoop(lastId string) {
 	log.Printf("Control Loop Strted for consumer : %s\n", c.id)
 	lastMessageId := lastId
@@ -295,7 +323,7 @@ func (c *Consumer) stop(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.active = false
-	return c.s.rebalance(ctx, &memberChangeInfo{
+	return c.rebalance(ctx, &memberChangeInfo{
 		Reason:     leave,
 		ConsumerId: c.id,
 		Group:      c.group,
@@ -334,4 +362,33 @@ func (c *Consumer) processControlMessage(ctx context.Context, stream string, las
 		}
 		return message.ID
 	}
+}
+
+func (c *Consumer) startControlLoop(ctx context.Context) error {
+	lastId, err := c.getLatestControlMessageId(ctx)
+	if err != nil {
+		return err
+	}
+	log.Printf("[%s] Received lastId as %s", c.id, lastId)
+	go c.controlLoop(lastId)
+	return nil
+}
+
+func (c *Consumer) getLatestControlMessageId(ctx context.Context) (string, error) {
+	result, err := c.rdb.XRevRangeN(ctx, c.s.controlKey(), "+", "-", 1).Result()
+
+	if err != nil && err != redis.Nil {
+		return "", err
+	}
+
+	if err == redis.Nil || len(result) == 0 {
+		return "0-0", nil
+	}
+
+	return result[0].ID, nil
+
+}
+
+func (c *Consumer) GetNameSpace() string {
+	return c.s.ns
 }
