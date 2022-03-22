@@ -40,6 +40,29 @@ func TestGetMessages(t *testing.T) {
 		log.Fatalf("Error occurred while registering streamName, %v", err)
 	}
 
+	// This is how you can register a consumer
+	// As more and more consumers join your stream partitions are redistributed among these consumers
+	// It takes the following arguments
+	// stream : Name of the stream against which this consumer would be registered
+	// group : Name of the consumer group. If it doesn't exist it will be created for you
+	// batchSize : batch size of messages
+	// maxProcessingTime : Maximum time before the message is eligible for redelivery. This will come into picture when
+	// a consumer dies, then after re-balancing partitions. the messages will be delivered to new consumers
+	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
+	if err != nil {
+		log.Fatalf("Error happened while registering Consumer c1, %v", err)
+	}
+
+	// Register One more consumer
+	c2, err := s.RegisterConsumer(ctx, streamName, "group1", 2, time.Second)
+	if err != nil {
+		log.Fatalf("Error happened while registering Consumer c2, %v", err)
+	}
+
+	// Now the partitions should be divided among these two consumer.
+	// Should be -> c1:[0], c2:[2]
+	time.Sleep(time.Second)
+
 	// This is how you send data to the stream
 	// It takes a PMessage (producer message). It has only 2 fields
 	//
@@ -62,29 +85,6 @@ func TestGetMessages(t *testing.T) {
 		}
 	}
 
-	// This is how you can register a consumer
-	// As more and more consumers join your stream partitions are redistributed among these consumers
-	// It takes the following arguments
-	// stream : Name of the stream against which this consumer would be registered
-	// group : Name of the consumer group. If it doesn't exist it will be created for you
-	// batchSize : batch size of messages
-	// maxProcessingTime : Maximum time before the message is eligible for redelivery. This will come into picture when
-	// a consumer dies, then after re-balancing partitions. the messages will be delivered to new consumers
-	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
-	if err != nil {
-		log.Fatalf("Error happened while registering Consumer c1, %v", err)
-	}
-
-	// Register One more consumer
-	c2, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
-	if err != nil {
-		log.Fatalf("Error happened while registering Consumer c2, %v", err)
-	}
-
-	// Now the partitions should be divided among these two consumer.
-	// Should be -> c1:[0], c2:[2]
-	time.Sleep(2 * time.Second)
-
 	// Reading messages from the consumer
 	// It returns a []CMessage (consumer message). It has 3 fields
 	// id : id of the message
@@ -94,7 +94,7 @@ func TestGetMessages(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
 	}
-	log.Printf("Comsumer 1 has claimed %d messages from stream", len(c1m))
+	log.Printf("Comsumer 1 has claimed %d messages from stream %v", len(c1m), c1m)
 
 	// Consumer also exposes the API to ack the messages
 	// Here we are acking all the messages delivered to consumer 1
@@ -121,14 +121,14 @@ func TestGetMessages(t *testing.T) {
 
 	// Shutting down Consumer 2 without acking the above messages
 	// This will cause the second partition to be assigned again to consumer 1
-	err = c2.ShutDown(ctx)
+	err = c2.ShutDown()
 	if err != nil {
 		log.Fatalf("Error happened while shutting down c2, %v", err)
 	}
 
 	// Just adding sleep to reach steady state. In production, we read messages periodically
 	// and hence we do not need this
-	time.Sleep(2 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	// Reading messages again from consumer 1
 	// This should give you messages which consumer 2 read but didn't ack
@@ -138,11 +138,8 @@ func TestGetMessages(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
 	}
-	ids = ""
-	for _, m := range c2m {
-		ids += m.Id + "|"
-	}
-	log.Printf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), ids)
 
-	time.Sleep(3 * time.Minute)
+	log.Printf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), c1mNew)
+
+	time.Sleep(10 * time.Second)
 }

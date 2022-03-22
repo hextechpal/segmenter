@@ -12,9 +12,9 @@ func TestMembers_Add(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		ms   Members
+		ms   members
 		args args
-		want Members
+		want members
 	}{
 		{
 			name: "Test1",
@@ -52,7 +52,7 @@ func TestMembers_Contains(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		ms   Members
+		ms   members
 		args args
 		want bool
 	}{
@@ -83,7 +83,7 @@ func TestMembers_Contains(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "Test3 - Empty Members",
+			name: "Test3 - Empty members",
 			ms:   []member{},
 			args: args{memberId: "cid2"},
 			want: false,
@@ -104,9 +104,9 @@ func TestMembers_FilterBy(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		ms   Members
+		ms   members
 		args args
-		want Members
+		want members
 	}{
 		{
 			name: "Test1 - member exist",
@@ -153,13 +153,13 @@ func TestMembers_FilterBy(t *testing.T) {
 
 func TestMembers_RemoveAll(t *testing.T) {
 	type args struct {
-		members Members
+		members members
 	}
 	tests := []struct {
 		name string
-		ms   Members
+		ms   members
 		args args
-		want Members
+		want members
 	}{
 		{
 			name: "Test1",
@@ -211,9 +211,9 @@ func TestMembers_Remove(t *testing.T) {
 	}
 	tests := []struct {
 		name string
-		ms   Members
+		ms   members
 		args args
-		want Members
+		want members
 	}{
 		{
 			name: "Test1",
@@ -242,7 +242,7 @@ func TestMembers_Remove(t *testing.T) {
 			},
 		},
 		{
-			name: "Test2 - Empty Members",
+			name: "Test2 - Empty members",
 			ms:   []member{},
 			args: args{mid: "cid2"},
 			want: []member{},

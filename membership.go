@@ -19,9 +19,9 @@ type memberChangeInfo struct {
 	Ts         int64  `json:"ts"`
 }
 
-type Members []member
+type members []member
 
-func (ms Members) Contains(memberId string) bool {
+func (ms members) Contains(memberId string) bool {
 	for _, m := range ms {
 		if m.ConsumerId == memberId {
 			return true
@@ -30,11 +30,11 @@ func (ms Members) Contains(memberId string) bool {
 	return false
 }
 
-func (ms Members) Add(member member) Members {
+func (ms members) Add(member member) members {
 	return append(ms, member)
 }
 
-func (ms Members) Remove(mid string) Members {
+func (ms members) Remove(mid string) members {
 	idx := -1
 	for i, m := range ms {
 		if m.ConsumerId == mid {
@@ -49,19 +49,19 @@ func (ms Members) Remove(mid string) Members {
 	return append(ms[:idx], ms[idx+1:]...)
 }
 
-func (ms Members) Len() int {
+func (ms members) Len() int {
 	return len(ms)
 }
 
-func (ms Members) Less(i, j int) bool {
+func (ms members) Less(i, j int) bool {
 	return ms[i].JoinedAt < ms[j].JoinedAt
 }
 
-func (ms Members) Swap(i, j int) {
+func (ms members) Swap(i, j int) {
 	ms[i], ms[j] = ms[j], ms[i]
 }
 
-func (ms Members) RemoveAll(members Members) Members {
+func (ms members) RemoveAll(members members) members {
 	removed := make([]member, ms.Len()-members.Len())
 	idx := 0
 	for _, m := range ms {
@@ -73,7 +73,7 @@ func (ms Members) RemoveAll(members Members) Members {
 	return removed
 }
 
-func (ms Members) FilterBy(group string) Members {
+func (ms members) FilterBy(group string) members {
 	nMembers := make([]member, 0)
 	for _, m := range ms {
 		if m.Group == group {
@@ -81,4 +81,13 @@ func (ms Members) FilterBy(group string) Members {
 		}
 	}
 	return nMembers
+}
+
+func (ms members) find(id string) *member {
+	for _, m := range ms {
+		if m.ConsumerId == id {
+			return &m
+		}
+	}
+	return nil
 }

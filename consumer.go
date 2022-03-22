@@ -2,6 +2,7 @@ package segmenter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
@@ -10,6 +11,7 @@ import (
 	"time"
 )
 
+const controlLoopInterval = 100 * time.Millisecond
 const heartBeatDuration = 2 * time.Second
 
 type Consumer struct {
@@ -25,7 +27,7 @@ type Consumer struct {
 	active            bool
 }
 
-func NewConsumer(_ context.Context, stream *Stream, batchSize int64, group string, maxProcessingTime time.Duration) (*Consumer, error) {
+func NewConsumer(ctx context.Context, stream *Stream, batchSize int64, group string, maxProcessingTime time.Duration) (*Consumer, error) {
 	c := &Consumer{
 		rdb:               stream.rdb,
 		id:                generateUuid(),
@@ -37,7 +39,14 @@ func NewConsumer(_ context.Context, stream *Stream, batchSize int64, group strin
 		active:            true,
 		shutDown:          make(chan bool),
 	}
+
+	lastId, err := c.getLatestControlMessageId(ctx)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[%s] Received lastId as %s", c.id, lastId)
 	go c.beat()
+	go c.controlLoop(lastId)
 	return c, nil
 }
 
@@ -118,6 +127,7 @@ func (c *Consumer) buildStreamsKey() []string {
 func (c *Consumer) GetMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	log.Printf("[%s], Get Messages called \n", c.GetID())
 	if !c.active {
 		return nil, errors.New("consumer shut down")
 	}
@@ -147,6 +157,7 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[partition][]string
 	pending := make(map[partition][]string)
 	ch := make(chan *pendingResponse)
 	for _, sg := range c.segmentMap {
+		log.Printf(" [%s] Sending pending entries request for Partition, %d", c.id, sg.partition)
 		go sg.pendingEntries(ctx, ch)
 	}
 
@@ -168,7 +179,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 		return []*contracts.CMessage{}, nil
 	}
 	streamsKey := c.buildStreamsKey()
-	log.Printf("[%s] Consumer reading pending messages from streams %v\n", c.id, streamsKey)
+	log.Printf("[%s] Consumer reading new messages from streams %v\n", c.id, streamsKey)
 	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
@@ -185,6 +196,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 		return nil, err
 	}
 
+	log.Printf("[%s] Result for new messages %v\n", c.id, result)
 	return mapXStreamToCMessage(result), nil
 }
 
@@ -234,16 +246,92 @@ func mapXMessageToCMessage(msgs []redis.XMessage) []*contracts.CMessage {
 	return cmessages
 }
 
-func (c *Consumer) ShutDown(ctx context.Context) error {
+func (c *Consumer) ShutDown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, sg := range c.segmentMap {
 		sg.ShutDown()
 	}
-	err := c.s.shutDownConsumer(ctx, c.GetID())
-	if err != nil {
-		return err
-	}
-	c.active = false
+	c.shutDown <- true
 	return nil
+}
+
+func (c *Consumer) getLatestControlMessageId(ctx context.Context) (string, error) {
+	result, err := c.rdb.XRevRangeN(ctx, c.s.controlKey(), "+", "-", 1).Result()
+
+	if err != nil && err != redis.Nil {
+		return "", err
+	}
+
+	if err == redis.Nil || len(result) == 0 {
+		return "0-0", nil
+	}
+
+	return result[0].ID, nil
+
+}
+func (c *Consumer) controlLoop(lastId string) {
+	log.Printf("Control Loop Strted for consumer : %s\n", c.id)
+	lastMessageId := lastId
+	stream := c.s.controlKey()
+	ctx := context.Background()
+	for {
+		select {
+		case <-c.shutDown:
+			err := c.stop(ctx)
+			if err != nil {
+				log.Printf("[%s] Error happened while stopping consumer, %v", c.id, err)
+			}
+			return
+		default:
+			lastMessageId = c.processControlMessage(ctx, stream, lastMessageId)
+		}
+		time.Sleep(controlLoopInterval)
+	}
+
+}
+
+func (c *Consumer) stop(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.active = false
+	return c.s.rebalance(ctx, &memberChangeInfo{
+		Reason:     leave,
+		ConsumerId: c.id,
+		Group:      c.group,
+		Ts:         time.Now().UnixMilli(),
+	})
+
+}
+
+func (c *Consumer) processControlMessage(ctx context.Context, stream string, lastMessageId string) string {
+	result, err := c.rdb.XRead(ctx, &redis.XReadArgs{
+		Streams: []string{stream, lastMessageId},
+		Count:   1,
+		Block:   time.Second,
+	}).Result()
+
+	if err != nil || len(result) == 0 {
+		if err != redis.Nil {
+			log.Printf("[%s] Error Happened while fetching control key, %v\n", c.id, err)
+		}
+		return lastMessageId
+	} else {
+		message := result[0].Messages[0]
+		data := message.Values["c"].(string)
+		var members members
+		_ = json.Unmarshal([]byte(data), &members)
+		log.Printf("[%s] Control Loop: Recieved Control Messages %v \n", c.id, members)
+		// We are requesting results from only one s so getting 0th result by default
+		m := members.find(c.id)
+		if members.Contains(c.id) {
+			log.Printf("Starting to rebalance consumer %s", c.id)
+			// TODO: Handle Error, not sure right now what to do on repartitioning error
+			err = c.rePartition(ctx, m.Partitions)
+			if err != nil {
+				log.Printf("Error happened while repatitioning consumer %d, %v\n", c.id, err)
+			}
+		}
+		return message.ID
+	}
 }
