@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-const controlLoopInterval = 100 * time.Millisecond
 const maintenanceLoopInterval = 500 * time.Millisecond
 const controlStreamSize = 256
 
@@ -35,9 +34,8 @@ func newStreamDTO(s *Stream) *streamDTO {
 }
 
 type Stream struct {
-	mu        sync.Mutex
-	rdb       *redis.Client
-	consumers map[string]*Consumer
+	mu  sync.Mutex
+	rdb *redis.Client
 
 	ns     string
 	name   string
@@ -46,8 +44,11 @@ type Stream struct {
 }
 
 func newStream(rdb *redis.Client, ns string, name string, pcount int, psize int64) *Stream {
-	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize, consumers: make(map[string]*Consumer)}
-	go s.controlLoop()
+	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize}
+	err := s.performMaintenance(context.Background())
+	if err != nil {
+		return nil
+	}
 	go s.maintenanceLoop()
 	return s
 }
@@ -76,22 +77,19 @@ func (s *Stream) getRedisStream(partitionKey string) string {
 
 // RegisterConsumer : Will a redis consumer with the specified consumer group
 // This will cause a partitioning re-balancing
-func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int, maxProcessingTime time.Duration) (*Consumer, error) {
+func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	c, err := NewConsumer(ctx, s, batchSize, group, maxProcessingTime)
 	if err != nil {
 		return nil, err
 	}
-	err = s.initializeGroup(ctx, group)
-	if err != nil {
-		return nil, err
-	}
+
 	err = s.join(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	s.consumers[c.id] = c
 	return c, nil
 }
 
@@ -145,14 +143,14 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) er
 	log.Printf("[Rebalance] Sending control message %v\n", newMembers)
 	return s.sendControlMessage(ctx, newMembers)
 }
-func (s *Stream) allMembers(ctx context.Context) (Members, error) {
+func (s *Stream) allMembers(ctx context.Context) (members, error) {
 	bytes, err := s.rdb.Get(ctx, s.memberShipKey()).Bytes()
 	if err == redis.Nil {
 		return []member{}, nil
 	} else if err != nil {
 		return nil, err
 	} else {
-		var members Members
+		var members members
 		err = json.Unmarshal(bytes, &members)
 		if err != nil {
 			return nil, err
@@ -160,7 +158,7 @@ func (s *Stream) allMembers(ctx context.Context) (Members, error) {
 		return members, nil
 	}
 }
-func (s *Stream) members(ctx context.Context, group string) (Members, error) {
+func (s *Stream) members(ctx context.Context, group string) (members, error) {
 	allMembers, err := s.allMembers(ctx)
 	if err != nil {
 		return nil, err
@@ -172,7 +170,7 @@ func (s *Stream) memberShipKey() string {
 	return fmt.Sprintf("__%s:__%s:__mbsh", s.ns, s.name)
 }
 
-func (s *Stream) computeMemberships(members Members) Members {
+func (s *Stream) computeMemberships(members members) members {
 	allPartitions := make([]partition, s.pcount)
 	for i := 0; i < s.pcount; i++ {
 		allPartitions[i] = partition(i)
@@ -196,7 +194,7 @@ func (s *Stream) computeMemberships(members Members) Members {
 	return newMembers
 }
 
-func (s *Stream) updateMembers(ctx context.Context, newMembers Members) error {
+func (s *Stream) updateMembers(ctx context.Context, newMembers members) error {
 	data, err := json.Marshal(newMembers)
 	if err != nil {
 		return err
@@ -208,7 +206,7 @@ func (s *Stream) updateMembers(ctx context.Context, newMembers Members) error {
 	return nil
 }
 
-func (s *Stream) sendControlMessage(ctx context.Context, members Members) error {
+func (s *Stream) sendControlMessage(ctx context.Context, members members) error {
 	val, err := json.Marshal(members)
 	if err != nil {
 		return err
@@ -226,89 +224,45 @@ func (s *Stream) controlKey() string {
 	return fmt.Sprintf("__%s:__%s:__ctrl", s.ns, s.name)
 }
 
-func (s *Stream) controlLoop() {
-	log.Printf("Control Loop Strted for s: %s\n", s.name)
-	lastMessageId := "$"
-	stream := s.controlKey()
-	ctx := context.Background()
-	for {
-		result, err := s.rdb.XRead(ctx, &redis.XReadArgs{
-			Streams: []string{stream, lastMessageId},
-			Count:   1,
-			Block:   1 * time.Second,
-		}).Result()
-
-		if err == redis.Nil {
-			// Do nothing
-		} else if err != nil {
-			log.Printf(" Error Happened while fetching control key, %v\n", err)
-		} else {
-			message := result[0].Messages[0]
-			data := message.Values["c"].(string)
-			var members Members
-			_ = json.Unmarshal([]byte(data), &members)
-			log.Printf("Control Loop: Recieved Control Messages %v \n", members)
-			// We are requesting results from only one s so getting 0th result by default
-			s.mu.Lock()
-			for _, m := range members {
-				if c, ok := s.consumers[m.ConsumerId]; ok {
-					log.Printf("Starting to rebalance consumer %s", m.ConsumerId)
-					// TODO: Handle Error, not sure right now what to do on repartitioning error
-					err = c.rePartition(ctx, m.Partitions)
-					if err != nil {
-						log.Printf("Error happened while repatitioning consumer %d, %v\n", c.id, err)
-					}
-				}
-			}
-			lastMessageId = message.ID
-			s.mu.Unlock()
-		}
-		time.Sleep(controlLoopInterval)
-	}
-}
-
 func (s *Stream) maintenanceLoop() {
 	for {
-		ctx := context.Background()
-		lock, err := acquireAdminLock(ctx, s.rdb, s.ns, s.name, 100*time.Millisecond)
+		err := s.performMaintenance(context.Background())
 		if err != nil {
-			time.Sleep(maintenanceLoopInterval / 2)
-			continue
+			time.Sleep(200 * time.Millisecond)
 		}
-		members, err := s.allMembers(ctx)
-		if err != nil {
-			_ = lock.Release(ctx)
-			time.Sleep(maintenanceLoopInterval / 2)
-			continue
-		}
-		deadMembers := s.calculateDeadMembers(ctx, members)
-		if len(deadMembers) == 0 {
-			_ = lock.Release(ctx)
-			time.Sleep(maintenanceLoopInterval)
-			continue
-		}
-		aliveMembers := members.RemoveAll(deadMembers)
-		newMembers := s.computeMemberships(aliveMembers)
-		err = s.updateMembers(ctx, newMembers)
-		if err != nil {
-			_ = lock.Release(ctx)
-			time.Sleep(maintenanceLoopInterval / 2)
-			continue
-		}
-		log.Printf("[Maintainence Loop] : Sending control Message %v\n", newMembers)
-		err = s.sendControlMessage(ctx, newMembers)
-		if err != nil {
-			_ = lock.Release(ctx)
-			time.Sleep(maintenanceLoopInterval / 2)
-			continue
-		}
-		_ = lock.Release(ctx)
 		time.Sleep(maintenanceLoopInterval)
 	}
 
 }
 
-func (s *Stream) calculateDeadMembers(ctx context.Context, members Members) Members {
+func (s *Stream) performMaintenance(ctx context.Context) error {
+	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, s.name, 100*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	defer lock.Release(ctx)
+
+	members, err := s.allMembers(ctx)
+	if err != nil {
+		return err
+	}
+
+	deadMembers := s.calculateDeadMembers(ctx, members)
+	if len(deadMembers) == 0 {
+		return nil
+	}
+
+	aliveMembers := members.RemoveAll(deadMembers)
+	newMembers := s.computeMemberships(aliveMembers)
+	err = s.updateMembers(ctx, newMembers)
+	if err != nil {
+		return err
+	}
+	log.Printf("[Maintainence Loop] : Sending control Message %v\n", newMembers)
+	return s.sendControlMessage(ctx, newMembers)
+}
+
+func (s *Stream) calculateDeadMembers(ctx context.Context, members members) members {
 	keys := make([]string, members.Len())
 	for i := 0; i < members.Len(); i++ {
 		keys[i] = heartBeatKey(s.ns, s.name, members[i].ConsumerId)
@@ -321,32 +275,4 @@ func (s *Stream) calculateDeadMembers(ctx context.Context, members Members) Memb
 		}
 	}
 	return dead
-}
-
-func (s *Stream) initializeGroup(ctx context.Context, group string) error {
-	for i := 0; i < s.pcount; i++ {
-		key := streamKey(s.ns, s.name, partition(i))
-		err := s.rdb.XGroupCreateMkStream(ctx, key, group, "$").Err()
-		if err != nil {
-			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
-				return nil
-			}
-			log.Printf("Error while registering Consumer, %v", err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Stream) shutDownConsumer(ctx context.Context, consumerId string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	c := s.consumers[consumerId]
-	delete(s.consumers, consumerId)
-	return s.rebalance(ctx, &memberChangeInfo{
-		Reason:     leave,
-		ConsumerId: consumerId,
-		Group:      c.group,
-		Ts:         time.Now().UnixMilli(),
-	})
 }

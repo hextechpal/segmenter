@@ -34,7 +34,7 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 	return s, nil
 }
 
-func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int, maxProcessingTime time.Duration) (*Consumer, error) {
+func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 
 	if name == "" {
 		return nil, EmptyStreamName
