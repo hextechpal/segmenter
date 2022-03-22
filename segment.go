@@ -28,7 +28,7 @@ func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment
 
 	lock, err := acquireLock(ctx, c.rdb, sg.partitionedStream(), lockDuration, c.id)
 	if err != nil {
-		log.Printf("[%s] Failed to Acquire lock with key %s, %v", c.id, c.s.name, err)
+		log.Printf("[%s] Failed to Acquire lock with key %s, %v", c.id, c.GetStreamName(), err)
 		return nil, err
 	}
 	sg.lock = lock
@@ -135,7 +135,7 @@ func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids
 }
 
 func (sg *segment) partitionedStream() string {
-	return streamKey(sg.c.s.ns, sg.c.GetStreamName(), sg.partition)
+	return partitionedStreamKey(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition)
 }
 
 func (sg *segment) ShutDown() {

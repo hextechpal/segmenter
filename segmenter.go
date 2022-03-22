@@ -52,9 +52,9 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 	stream, err := s.findStream(ctx, name)
 	if err != nil || stream == nil {
 		// TODO handle the case when stream do not exist
-		return nil, errors.New("no Stream exist")
+		return nil, errors.New("no stream exist")
 	}
-	return stream.registerConsumer(ctx, group, batchSize, maxProcessingTime)
+	return NewConsumer(ctx, stream, batchSize, group, maxProcessingTime)
 }
 
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
@@ -131,7 +131,7 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO
 }
 
 func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
-	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, "", 100*time.Millisecond)
+	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, name, 100*time.Millisecond)
 	if err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"google.golang.org/protobuf/encoding/protojson"
-	"log"
 	"math"
 	"sort"
 	"sync"
@@ -71,78 +70,13 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 }
 
 func (s *Stream) getRedisStream(partitionKey string) string {
-	pc := partition(int(hash(partitionKey)) % s.pcount)
-	return streamKey(s.ns, s.name, pc)
+	return partitionedStreamKey(s.ns, s.name, s.getPartitionFromKey(partitionKey))
 }
 
-// RegisterConsumer : Will a redis consumer with the specified consumer group
-// This will cause a partitioning re-balancing
-func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	c, err := NewConsumer(ctx, s, batchSize, group, maxProcessingTime)
-	if err != nil {
-		return nil, err
-	}
-
-	err = s.join(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
+func (s *Stream) getPartitionFromKey(partitionKey string) partition {
+	return partition(int(hash(partitionKey)) % s.pcount)
 }
 
-func (s *Stream) join(ctx context.Context, c *Consumer) error {
-	return s.rebalance(ctx, &memberChangeInfo{
-		Reason:     join,
-		Group:      c.group,
-		ConsumerId: c.id,
-		Ts:         time.Now().UnixMilli(),
-	})
-}
-
-func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) error {
-	lock, err := acquireAdminLock(ctx, s.rdb, s.ns, s.name, 1*time.Second)
-	if err != nil {
-		return err
-	}
-	defer lock.Release(ctx)
-
-	members, err := s.members(ctx, changeInfo.Group)
-	if err != nil {
-		return err
-	}
-
-	if changeInfo.Reason == join && members.Contains(changeInfo.ConsumerId) {
-		return nil
-	}
-
-	if changeInfo.Reason == leave && !members.Contains(changeInfo.ConsumerId) {
-		return nil
-	}
-
-	// Add and sort members
-	newMember := member{
-		ConsumerId: changeInfo.ConsumerId,
-		JoinedAt:   changeInfo.Ts,
-		Group:      changeInfo.Group,
-	}
-	if changeInfo.Reason == join {
-		members = members.Add(newMember)
-	} else {
-		members = members.Remove(newMember.ConsumerId)
-	}
-	sort.Sort(members)
-
-	newMembers := s.computeMemberships(members)
-	err = s.updateMembers(ctx, newMembers)
-	if err != nil {
-		return err
-	}
-	log.Printf("[Rebalance] Sending control message %v\n", newMembers)
-	return s.sendControlMessage(ctx, newMembers)
-}
 func (s *Stream) allMembers(ctx context.Context) (members, error) {
 	bytes, err := s.rdb.Get(ctx, s.memberShipKey()).Bytes()
 	if err == redis.Nil {
@@ -170,7 +104,21 @@ func (s *Stream) memberShipKey() string {
 	return fmt.Sprintf("__%s:__%s:__mbsh", s.ns, s.name)
 }
 
+func (s *Stream) updateMembers(ctx context.Context, oldMembers members) error {
+	newMembers := s.computeMemberships(oldMembers)
+	data, err := json.Marshal(newMembers)
+	if err != nil {
+		return err
+	}
+	err = s.rdb.Set(ctx, s.memberShipKey(), data, 0).Err()
+	if err != nil {
+		return err
+	}
+	return s.sendControlMessage(ctx, newMembers)
+}
+
 func (s *Stream) computeMemberships(members members) members {
+	sort.Sort(members)
 	allPartitions := make([]partition, s.pcount)
 	for i := 0; i < s.pcount; i++ {
 		allPartitions[i] = partition(i)
@@ -192,18 +140,6 @@ func (s *Stream) computeMemberships(members members) members {
 		}
 	}
 	return newMembers
-}
-
-func (s *Stream) updateMembers(ctx context.Context, newMembers members) error {
-	data, err := json.Marshal(newMembers)
-	if err != nil {
-		return err
-	}
-	err = s.rdb.Set(ctx, s.memberShipKey(), data, 0).Err()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (s *Stream) sendControlMessage(ctx context.Context, members members) error {
@@ -251,15 +187,9 @@ func (s *Stream) performMaintenance(ctx context.Context) error {
 	if len(deadMembers) == 0 {
 		return nil
 	}
-
 	aliveMembers := members.RemoveAll(deadMembers)
-	newMembers := s.computeMemberships(aliveMembers)
-	err = s.updateMembers(ctx, newMembers)
-	if err != nil {
-		return err
-	}
-	log.Printf("[Maintainence Loop] : Sending control Message %v\n", newMembers)
-	return s.sendControlMessage(ctx, newMembers)
+	sort.Sort(aliveMembers)
+	return s.updateMembers(ctx, aliveMembers)
 }
 
 func (s *Stream) calculateDeadMembers(ctx context.Context, members members) members {
