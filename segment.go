@@ -5,7 +5,7 @@ import (
 	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
-	"log"
+	"github.com/rs/zerolog"
 	"time"
 )
 
@@ -16,10 +16,13 @@ type segment struct {
 	partition partition
 	lock      *redislock.Lock
 	shutDown  chan bool
+
+	logger *zerolog.Logger
 }
 
 func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment, error) {
-	sg := &segment{partition: partition, c: c, shutDown: make(chan bool)}
+	logger := c.logger.With().Int("partition", int(partition)).Logger()
+	sg := &segment{partition: partition, c: c, shutDown: make(chan bool), logger: &logger}
 
 	err := sg.checkConsumerGroup()
 	if err != nil {
@@ -28,7 +31,7 @@ func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment
 
 	lock, err := acquireLock(ctx, c.rdb, sg.partitionedStream(), lockDuration, c.id)
 	if err != nil {
-		log.Printf("[%s] Failed to Acquire lock with key %s, %v", c.id, c.GetStreamName(), err)
+		logger.Error().Msgf("Failed to Acquire lock with key %s, %v", c.GetStreamName(), err)
 		return nil, err
 	}
 	sg.lock = lock
@@ -47,7 +50,7 @@ func (sg *segment) refreshLock() {
 		default:
 			err := sg.lock.Refresh(ctx, lockDuration, nil)
 			if err != nil {
-				log.Printf("Error happened while refreshing lock %s Consumer %s, %v", sg.lock.Key(), sg.lock.Metadata(), err)
+				sg.logger.Debug().Msgf("Error happened while refreshing lock %s, err: %v", sg.lock.Key(), err)
 			}
 		}
 		time.Sleep(1000 * time.Millisecond)
@@ -56,7 +59,7 @@ func (sg *segment) refreshLock() {
 }
 
 func (sg *segment) releaseLock(ctx context.Context) error {
-	log.Printf("Releasing lock with key stream %s, partition %d\n", sg.c.GetStreamName(), sg.partition)
+	sg.logger.Debug().Msgf("Releasing lock with key stream %s, partition %d", sg.c.GetStreamName(), sg.partition)
 	return sg.lock.Release(ctx)
 }
 
@@ -149,7 +152,7 @@ func (sg *segment) checkConsumerGroup() error {
 		if err.Error() == "BUSYGROUP Consumer Group name already exists" {
 			return nil
 		}
-		log.Printf("Error while registering Consumer, %v", err)
+		sg.logger.Debug().Msgf("Error while registering Consumer, %v", err)
 		return err
 	}
 	return nil

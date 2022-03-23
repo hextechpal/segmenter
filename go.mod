@@ -6,6 +6,7 @@ require (
 	github.com/bsm/redislock v0.7.2
 	github.com/go-redis/redis/v8 v8.11.4
 	github.com/google/uuid v1.3.0
+	github.com/rs/zerolog v1.26.1
 	google.golang.org/protobuf v1.27.1
 )
 

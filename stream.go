@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
+	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/encoding/protojson"
 	"math"
 	"sort"
@@ -40,10 +41,13 @@ type Stream struct {
 	name   string
 	pcount int
 	psize  int64
+
+	logger *zerolog.Logger
 }
 
-func newStream(rdb *redis.Client, ns string, name string, pcount int, psize int64) *Stream {
-	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize}
+func newStream(rdb *redis.Client, ns string, name string, pcount int, psize int64, logger *zerolog.Logger) *Stream {
+	nLogger := logger.With().Str("stream", name).Int("pcount", pcount).Logger()
+	s := &Stream{rdb: rdb, ns: ns, name: name, pcount: pcount, psize: psize, logger: &nLogger}
 	err := s.performMaintenance(context.Background())
 	if err != nil {
 		return nil
@@ -52,21 +56,27 @@ func newStream(rdb *redis.Client, ns string, name string, pcount int, psize int6
 	return s
 }
 
-func newStreamFromDTO(rdb *redis.Client, dto *streamDTO) *Stream {
-	return newStream(rdb, dto.Ns, dto.Name, dto.Pcount, dto.Psize)
+func newStreamFromDTO(rdb *redis.Client, dto *streamDTO, logger *zerolog.Logger) *Stream {
+	return newStream(rdb, dto.Ns, dto.Name, dto.Pcount, dto.Psize, logger)
 }
 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
 	data, _ := protojson.Marshal(m)
-	r := s.rdb.XAdd(ctx, &redis.XAddArgs{
+	id, err := s.rdb.XAdd(ctx, &redis.XAddArgs{
 		Stream: s.getRedisStream(m.GetPartitionKey()),
 		MaxLen: s.psize,
 		Values: map[string]interface{}{
 			"data":         data,
 			"partitionKey": m.GetPartitionKey(),
 		},
-	})
-	return r.Result()
+	}).Result()
+
+	if err != nil {
+		s.logger.Error().Msgf("Error happened while sending message &v", err)
+		return "", err
+	}
+	s.logger.Info().Msgf("Sent message with Id %v", id)
+	return id, nil
 }
 
 func (s *Stream) getRedisStream(partitionKey string) string {

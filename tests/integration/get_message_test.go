@@ -23,6 +23,7 @@ func TestGetMessages(t *testing.T) {
 	c := segmenter.Config{
 		RedisOptions: &redis.Options{Addr: "localhost:6379"},
 		NameSpace:    ns,
+		Debug:        true,
 	}
 	s, err := segmenter.NewSegmenter(&c)
 	if err != nil {
@@ -74,15 +75,10 @@ func TestGetMessages(t *testing.T) {
 	// Sending 10 messages in the stream that will be divided across 2 partitions
 	for i := 0; i < 10; i++ {
 		uuid := fmt.Sprintf("uuid_%d", rand.Intn(1000))
-		id, err := st.Send(context.TODO(), &contracts.PMessage{
+		_, _ = st.Send(context.TODO(), &contracts.PMessage{
 			Data:         []byte(fmt.Sprintf("Message with uuid : %s", uuid)),
 			PartitionKey: uuid,
 		})
-		if err != nil {
-			log.Printf("Error happened while sending message, %v\n", err)
-		} else {
-			log.Printf("Message Sent with Id, %v\n", id)
-		}
 	}
 
 	// Reading messages from the consumer
