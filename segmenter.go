@@ -6,16 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/rs/zerolog"
+	"os"
 	"sync"
 	"time"
 )
-
-type Segmenter struct {
-	mu      sync.Mutex
-	ns      string
-	rdb     *redis.Client
-	streams map[string]*Stream
-}
 
 var EmptyStreamName = errors.New("stream name cannot be empty")
 var EmptyGroupName = errors.New("group cannot be empty")
@@ -23,15 +18,34 @@ var InvalidBatchSize = errors.New("batch size cannot less than 1")
 var InvalidPartitionCount = errors.New("partition count cannot less than 1")
 var InvalidPartitionSize = errors.New("partition size cannot less than 1")
 
+type Segmenter struct {
+	mu      sync.Mutex
+	ns      string
+	rdb     *redis.Client
+	streams map[string]*Stream
+	logger  *zerolog.Logger
+}
+
 func NewSegmenter(c *Config) (*Segmenter, error) {
 	rdb := redis.NewClient(c.RedisOptions)
 	err := rdb.Ping(context.TODO()).Err()
 	if err != nil {
 		return nil, err
 	}
-
-	s := &Segmenter{rdb: rdb, ns: c.NameSpace, streams: make(map[string]*Stream)}
+	logger := setupLogger(c.Debug, c.NameSpace)
+	s := &Segmenter{rdb: rdb, ns: c.NameSpace, streams: make(map[string]*Stream), logger: logger}
 	return s, nil
+}
+
+func setupLogger(debug bool, space string) *zerolog.Logger {
+	logLevel := zerolog.InfoLevel
+	if debug {
+		logLevel = zerolog.DebugLevel
+	}
+
+	zerolog.SetGlobalLevel(logLevel)
+	logger := zerolog.New(os.Stderr).With().Timestamp().Str("ns", space).Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	return &logger
 }
 
 func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
@@ -54,7 +68,8 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 		// TODO handle the case when stream do not exist
 		return nil, errors.New("no stream exist")
 	}
-	return NewConsumer(ctx, stream, batchSize, group, maxProcessingTime)
+	s.logger.Info().Msgf("registering new consumer for stream %s", stream.name)
+	return NewConsumer(ctx, stream, batchSize, group, maxProcessingTime, s.logger)
 }
 
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
@@ -84,16 +99,17 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
-		stream = newStreamFromDTO(s.rdb, streamDTO)
+		stream = newStreamFromDTO(s.rdb, streamDTO, s.logger)
 		s.streams[stream.name] = stream
 		return stream, nil
 	}
 
-	stream = newStream(s.rdb, s.ns, name, pcount, psize)
+	stream = newStream(s.rdb, s.ns, name, pcount, psize, nil)
 	err = s.saveStream(ctx, name, stream)
 	if err != nil {
 		return nil, err
 	}
+	s.logger.Info()
 	return stream, nil
 }
 
@@ -110,7 +126,7 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error
 	if streamDTO == nil {
 		return nil, nil
 	}
-	stream = newStreamFromDTO(s.rdb, streamDTO)
+	stream = newStreamFromDTO(s.rdb, streamDTO, nil)
 	s.streams[name] = stream
 	return stream, nil
 }

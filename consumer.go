@@ -6,7 +6,7 @@ import (
 	"errors"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
-	"log"
+	"github.com/rs/zerolog"
 	"sync"
 	"time"
 )
@@ -25,12 +25,16 @@ type Consumer struct {
 	segmentMap        map[partition]*segment
 	shutDown          chan bool
 	active            bool
+
+	logger *zerolog.Logger
 }
 
-func NewConsumer(ctx context.Context, stream *Stream, batchSize int64, group string, maxProcessingTime time.Duration) (*Consumer, error) {
+func NewConsumer(ctx context.Context, stream *Stream, batchSize int64, group string, maxProcessingTime time.Duration, logger *zerolog.Logger) (*Consumer, error) {
+	id := generateUuid()
+	nLogger := logger.With().Str("stream", stream.name).Str("consumerId", id).Str("group", group).Logger()
 	c := &Consumer{
 		rdb:               stream.rdb,
-		id:                generateUuid(),
+		id:                id,
 		batchSize:         batchSize,
 		s:                 stream,
 		group:             group,
@@ -38,6 +42,7 @@ func NewConsumer(ctx context.Context, stream *Stream, batchSize int64, group str
 		segmentMap:        make(map[partition]*segment),
 		active:            true,
 		shutDown:          make(chan bool),
+		logger:            &nLogger,
 	}
 
 	err := c.startControlLoop(ctx)
@@ -114,7 +119,7 @@ func (c *Consumer) beat() {
 		default:
 			set := c.rdb.Set(ctx, heartBeatKey(c.GetNameSpace(), c.GetStreamName(), c.id), time.Now().UnixMilli(), heartBeatDuration)
 			if set.Err() != nil {
-				log.Printf("Error occured while refreshing heartbeat")
+				c.logger.Info().Msg("Error occurred while refreshing heartbeat")
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
@@ -131,27 +136,27 @@ func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error
 			toBeReleased = append(toBeReleased, p)
 		}
 	}
-	log.Printf("[%s] Need to Shutdown partitions : %v\n", c.id, toBeReleased)
+	c.logger.Debug().Msgf("Need to Shutdown partitions : %v", toBeReleased)
 
 	for _, p := range toBeReleased {
 		c.segmentMap[p].ShutDown()
 		delete(c.segmentMap, p)
 	}
 
-	log.Printf("[%s] Partions shut down Sucessfully : %v\n", c.id, toBeReleased)
+	c.logger.Info().Msgf("Partitions shut down Successfully : %v", toBeReleased)
 
 	for _, p := range partitions {
 		if _, ok := c.segmentMap[p]; !ok {
-			log.Printf("[%s] Creating segment for partion : %v\n", c.id, p)
+			c.logger.Debug().Msgf("Creating segment for partition : %v", p)
 			sg, err := newSegment(ctx, c, p)
 			if err != nil {
 				return err
 			}
 			c.segmentMap[p] = sg
-			log.Printf("[%s] Created segment for partion : %v\n", c.id, p)
+			c.logger.Debug().Msgf("Created segment for partition : %v", p)
 		}
 	}
-	log.Printf("[%s] Rebalance Completed\n", c.id)
+	c.logger.Debug().Msg("Rebalance Completed")
 	return nil
 }
 
@@ -170,7 +175,7 @@ func (c *Consumer) buildStreamsKey() []string {
 func (c *Consumer) GetMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	log.Printf("[%s], Get Messages called \n", c.GetID())
+	c.logger.Debug().Msgf("Get Messages")
 	if !c.active {
 		return nil, errors.New("consumer shut down")
 	}
@@ -200,14 +205,12 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[partition][]string
 	pending := make(map[partition][]string)
 	ch := make(chan *pendingResponse)
 	for _, sg := range c.segmentMap {
-		log.Printf(" [%s] Sending pending entries request for Partition, %d", c.id, sg.partition)
 		go sg.pendingEntries(ctx, ch)
 	}
 
 	for i := 0; i < len(c.segmentMap); i++ {
 		pr := <-ch
 		if pr.err != nil {
-			log.Printf("error while executing pending command, %v\n", pr.err)
 			continue
 		}
 		if len(pr.messageIds) > 0 {
@@ -222,7 +225,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 		return []*contracts.CMessage{}, nil
 	}
 	streamsKey := c.buildStreamsKey()
-	log.Printf("[%s] Consumer reading new messages from streams %v\n", c.id, streamsKey)
+	c.logger.Debug().Msgf("Consumer reading new messages from streams %v", streamsKey)
 	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
@@ -238,8 +241,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[%s] Result for new messages %v\n", c.id, result)
+	c.logger.Debug().Msgf("Result for new messages %v", result)
 	return mapXStreamToCMessage(result), nil
 }
 
@@ -260,7 +262,6 @@ func (c *Consumer) claimEntries(ctx context.Context, entries map[partition][]str
 	for i := 0; i < len(entries); i++ {
 		cr := <-ch
 		if cr.err != nil {
-			log.Printf("error while executing pending command, %v\n", cr.err)
 			continue
 		}
 		messages = append(messages, cr.messages...)
@@ -299,7 +300,7 @@ func (c *Consumer) ShutDown() error {
 	return nil
 }
 func (c *Consumer) controlLoop(lastId string) {
-	log.Printf("Control Loop Strted for consumer : %s\n", c.id)
+	c.logger.Debug().Msg("Control Loop Started")
 	lastMessageId := lastId
 	stream := c.s.controlKey()
 	ctx := context.Background()
@@ -308,7 +309,7 @@ func (c *Consumer) controlLoop(lastId string) {
 		case <-c.shutDown:
 			err := c.stop(ctx)
 			if err != nil {
-				log.Printf("[%s] Error happened while stopping consumer, %v", c.id, err)
+				c.logger.Error().Msgf("Error happened while stopping consumer, %v", err)
 			}
 			return
 		default:
@@ -341,7 +342,7 @@ func (c *Consumer) processControlMessage(ctx context.Context, stream string, las
 
 	if err != nil || len(result) == 0 {
 		if err != redis.Nil {
-			log.Printf("[%s] Error Happened while fetching control key, %v\n", c.id, err)
+			c.logger.Error().Msgf("Error Happened while fetching control key, %v", err)
 		}
 		return lastMessageId
 	} else {
@@ -349,15 +350,15 @@ func (c *Consumer) processControlMessage(ctx context.Context, stream string, las
 		data := message.Values["c"].(string)
 		var members members
 		_ = json.Unmarshal([]byte(data), &members)
-		log.Printf("[%s] Control Loop: Recieved Control Messages %v \n", c.id, members)
+		c.logger.Debug().Msgf("Control Loop: Received Control Messages Members: %v", members)
 		// We are requesting results from only one s so getting 0th result by default
 		m := members.find(c.id)
 		if members.Contains(c.id) {
-			log.Printf("Starting to rebalance consumer %s", c.id)
+			c.logger.Debug().Msg("Starting to rebalance consumer")
 			// TODO: Handle Error, not sure right now what to do on repartitioning error
 			err = c.rePartition(ctx, m.Partitions)
 			if err != nil {
-				log.Printf("Error happened while repatitioning consumer %d, %v\n", c.id, err)
+				c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
 			}
 		}
 		return message.ID
@@ -369,7 +370,7 @@ func (c *Consumer) startControlLoop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("[%s] Received lastId as %s", c.id, lastId)
+	c.logger.Debug().Msgf("Received lastId : %s", lastId)
 	go c.controlLoop(lastId)
 	return nil
 }
