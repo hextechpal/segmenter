@@ -72,7 +72,7 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 	}).Result()
 
 	if err != nil {
-		s.logger.Error().Msgf("Error happened while sending message &v", err)
+		s.logger.Error().Msgf("Error happened while sending message %v", err)
 		return "", err
 	}
 	s.logger.Info().Msgf("Sent message with Id %v", id)
