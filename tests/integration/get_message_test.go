@@ -49,7 +49,7 @@ func TestGetMessages(t *testing.T) {
 	// batchSize : batch size of messages
 	// maxProcessingTime : Maximum time before the message is eligible for redelivery. This will come into picture when
 	// a consumer dies, then after re-balancing partitions. the messages will be delivered to new consumers
-	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
+	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 5, time.Second)
 	if err != nil {
 		log.Fatalf("Error happened while registering Consumer c1, %v", err)
 	}

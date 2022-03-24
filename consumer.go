@@ -143,7 +143,7 @@ func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error
 		delete(c.segmentMap, p)
 	}
 
-	c.logger.Info().Msgf("Partitions shut down Successfully : %v", toBeReleased)
+	c.logger.Debug().Msgf("Partitions shut down Successfully : %v", toBeReleased)
 
 	for _, p := range partitions {
 		if _, ok := c.segmentMap[p]; !ok {
