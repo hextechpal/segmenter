@@ -1,6 +1,8 @@
 package segmenter
 
 import (
+	"context"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
 	"github.com/rs/zerolog"
@@ -210,4 +212,97 @@ func TestStream_controlKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStream_calculateDeadMembers(t *testing.T) {
+	ns := "sgNs"
+	sname := "sgStreamName"
+	pc := 7
+	mCount := 3
+	allMembers := setupMembers(t, pc, ns, sname, mCount)
+
+	type args struct {
+		ctx     context.Context
+		members members
+	}
+	tests := []struct {
+		name  string
+		alive []int
+		args  args
+		want  members
+	}{
+		{
+			name:  "All members Alive",
+			alive: []int{0, 1, 2},
+			args: args{
+				ctx:     context.Background(),
+				members: allMembers,
+			},
+			want: []member{},
+		},
+		{
+			name:  "One Member dead",
+			alive: []int{0, 1},
+			args: args{
+				ctx:     context.Background(),
+				members: allMembers,
+			},
+			want: allMembers[2:],
+		},
+		{
+			name:  "All members dead",
+			alive: []int{},
+			args: args{
+				ctx:     context.Background(),
+				members: allMembers,
+			},
+			want: allMembers,
+		},
+	}
+	rdb, mock := redismock.NewClientMock()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := createStream(t, rdb, pc, ns, sname)
+			hbs := make([]string, mCount)
+			alive := make([]interface{}, mCount)
+			for i, m := range allMembers {
+				hbs[i] = fmt.Sprintf("__%s:__%s:__beat:%s", ns, sname, m.ConsumerId)
+			}
+			for i, mc := range tt.alive {
+				alive[i] = allMembers[mc]
+			}
+			mock.ExpectMGet(hbs...).SetVal(alive)
+			if got := s.calculateDeadMembers(tt.args.ctx, tt.args.members); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("calculateDeadMembers() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func setupMembers(t *testing.T, pc int, ns, sName string, mCount int) members {
+	t.Helper()
+	allPartitions := make([]partition, pc)
+	allMembers := make([]member, mCount)
+
+	for i := 0; i < pc; i++ {
+		allPartitions[i] = partition(i)
+	}
+	ppm := pc / mCount
+	for i := 0; i < mCount; i++ {
+		var p partitions
+		if i == mCount-1 {
+			p = allPartitions[i*ppm:]
+		} else {
+			p = allPartitions[i*ppm : (i+1)*ppm]
+		}
+		m := member{
+			ConsumerId: fmt.Sprintf("consume%d", i),
+			JoinedAt:   time.Now().UnixMilli(),
+			Partitions: p,
+			Group:      "group1",
+		}
+		allMembers[i] = m
+
+	}
+	return allMembers
 }
