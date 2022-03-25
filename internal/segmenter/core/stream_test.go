@@ -1,4 +1,4 @@
-package segmenter
+package core
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
+	"github.com/hextechpal/segmenter/internal/segmenter/locker"
+	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
 	"os"
 	"reflect"
@@ -19,6 +21,8 @@ func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name strin
 	logger := zerolog.New(os.Stderr).With().Logger()
 	return &Stream{
 		rdb:    rdb,
+		store:  store.NewRedisStore(rdb),
+		locker: locker.NewRedisLocker(rdb),
 		ns:     ns,
 		name:   name,
 		pcount: pc,
@@ -29,22 +33,22 @@ func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name strin
 
 func setupMembers(t *testing.T, pc int, ns, sName string, mCount int) members {
 	t.Helper()
-	allPartitions := make([]partition, pc)
+	allPartitions := make([]Partition, pc)
 	allMembers := make([]member, mCount)
 
 	for i := 0; i < pc; i++ {
-		allPartitions[i] = partition(i)
+		allPartitions[i] = Partition(i)
 	}
 	ppm := pc / mCount
 	for i := 0; i < mCount; i++ {
-		var p partitions
+		var p Partitions
 		if i == mCount-1 {
 			p = allPartitions[i*ppm:]
 		} else {
 			p = allPartitions[i*ppm : (i+1)*ppm]
 		}
 		m := member{
-			ConsumerId: fmt.Sprintf("consume%d", i),
+			ID:         fmt.Sprintf("consume%d", i),
 			JoinedAt:   time.Now().UnixMilli(),
 			Partitions: p,
 			Group:      "group1",
@@ -66,140 +70,140 @@ func TestStream_computeMemberships(t *testing.T) {
 		want members
 	}{
 		{
-			name: "2 members - 4 partitions",
+			name: "2 members - 4 Partitions",
 			pc:   4,
 			args: args{
 				members: []member{
 					{
-						ConsumerId: "consumer1",
-						JoinedAt:   time.Now().UnixMilli(),
-						Group:      "group1",
+						ID:       "consumer1",
+						JoinedAt: time.Now().UnixMilli(),
+						Group:    "group1",
 					},
 					{
-						ConsumerId: "consumer2",
-						JoinedAt:   time.Now().UnixMilli() + 100,
-						Group:      "group1",
+						ID:       "consumer2",
+						JoinedAt: time.Now().UnixMilli() + 100,
+						Group:    "group1",
 					},
 				},
 			},
 			want: []member{
 				{
-					ConsumerId: "consumer1",
+					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(0), partition(1)},
+					Partitions: []Partition{Partition(0), Partition(1)},
 					Group:      "group1",
 				},
 				{
-					ConsumerId: "consumer2",
+					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(2), partition(3)},
+					Partitions: []Partition{Partition(2), Partition(3)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "2 members - 3 partitions",
+			name: "2 members - 3 Partitions",
 			pc:   3,
 			args: args{
 				members: []member{
 					{
-						ConsumerId: "consumer1",
-						JoinedAt:   time.Now().UnixMilli(),
-						Group:      "group1",
+						ID:       "consumer1",
+						JoinedAt: time.Now().UnixMilli(),
+						Group:    "group1",
 					},
 					{
-						ConsumerId: "consumer2",
-						JoinedAt:   time.Now().UnixMilli() + 100,
-						Group:      "group1",
+						ID:       "consumer2",
+						JoinedAt: time.Now().UnixMilli() + 100,
+						Group:    "group1",
 					},
 				},
 			},
 			want: []member{
 				{
-					ConsumerId: "consumer1",
+					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(0), partition(1)},
+					Partitions: []Partition{Partition(0), Partition(1)},
 					Group:      "group1",
 				},
 				{
-					ConsumerId: "consumer2",
+					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(2)},
+					Partitions: []Partition{Partition(2)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "2 members - 1 partitions",
+			name: "2 members - 1 Partitions",
 			pc:   1,
 			args: args{
 				members: []member{
 					{
-						ConsumerId: "consumer1",
-						JoinedAt:   time.Now().UnixMilli(),
-						Group:      "group1",
+						ID:       "consumer1",
+						JoinedAt: time.Now().UnixMilli(),
+						Group:    "group1",
 					},
 					{
-						ConsumerId: "consumer2",
-						JoinedAt:   time.Now().UnixMilli() + 100,
-						Group:      "group1",
+						ID:       "consumer2",
+						JoinedAt: time.Now().UnixMilli() + 100,
+						Group:    "group1",
 					},
 				},
 			},
 			want: []member{
 				{
-					ConsumerId: "consumer1",
+					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(0)},
+					Partitions: []Partition{Partition(0)},
 					Group:      "group1",
 				},
 				{
-					ConsumerId: "consumer2",
+					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{},
+					Partitions: []Partition{},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "3 members - 10 partitions",
+			name: "3 members - 10 Partitions",
 			pc:   10,
 			args: args{
 				members: []member{
 					{
-						ConsumerId: "consumer1",
-						JoinedAt:   time.Now().UnixMilli(),
-						Group:      "group1",
+						ID:       "consumer1",
+						JoinedAt: time.Now().UnixMilli(),
+						Group:    "group1",
 					},
 					{
-						ConsumerId: "consumer2",
-						JoinedAt:   time.Now().UnixMilli() + 100,
-						Group:      "group1",
+						ID:       "consumer2",
+						JoinedAt: time.Now().UnixMilli() + 100,
+						Group:    "group1",
 					},
 					{
-						ConsumerId: "consumer3",
-						JoinedAt:   time.Now().UnixMilli() + 100,
-						Group:      "group1",
+						ID:       "consumer3",
+						JoinedAt: time.Now().UnixMilli() + 100,
+						Group:    "group1",
 					},
 				},
 			},
 			want: []member{
 				{
-					ConsumerId: "consumer1",
+					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(0), partition(1), partition(2)},
+					Partitions: []Partition{Partition(0), Partition(1), Partition(2)},
 					Group:      "group1",
 				},
 				{
-					ConsumerId: "consumer2",
+					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(3), partition(4), partition(5)},
+					Partitions: []Partition{Partition(3), Partition(4), Partition(5)},
 					Group:      "group1",
 				},
 				{
-					ConsumerId: "consumer3",
+					ID:         "consumer3",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []partition{partition(6), partition(7), partition(8), partition(9)},
+					Partitions: []Partition{Partition(6), Partition(7), Partition(8), Partition(9)},
 					Group:      "group1",
 				},
 			},
@@ -212,7 +216,7 @@ func TestStream_computeMemberships(t *testing.T) {
 			got := s.computeMemberships(tt.args.members)
 			for i := 0; i < len(tt.want); i++ {
 				if !reflect.DeepEqual(got[i].Partitions, tt.want[i].Partitions) {
-					t.Errorf("Consumer %s, contains() = %v, want %v", got[i].ConsumerId, got[i].Partitions, tt.want[i].Partitions)
+					t.Errorf("Consumer %s, contains() = %v, want %v", got[i].ID, got[i].Partitions, tt.want[i].Partitions)
 				}
 			}
 		})
@@ -296,7 +300,7 @@ func TestStream_calculateDeadMembers(t *testing.T) {
 			hbs := make([]string, mCount)
 			alive := make([]interface{}, mCount)
 			for i, m := range allMembers {
-				hbs[i] = fmt.Sprintf("__%s:__%s:__beat:%s", ns, sname, m.ConsumerId)
+				hbs[i] = fmt.Sprintf("__%s:__%s:__beat:%s", ns, sname, m.ID)
 			}
 			for i, mc := range tt.alive {
 				alive[i] = allMembers[mc]

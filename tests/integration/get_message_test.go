@@ -53,12 +53,14 @@ func TestGetMessages(t *testing.T) {
 	if err != nil {
 		log.Fatalf("Error happened while registering Consumer c1, %v", err)
 	}
+	log.Printf("Registered Consumer with ID %s", c1.GetID())
 
 	// Register One more consumer
 	c2, err := s.RegisterConsumer(ctx, streamName, "group1", 2, time.Second)
 	if err != nil {
 		log.Fatalf("Error happened while registering Consumer c2, %v", err)
 	}
+	log.Printf("Registered Consumer with ID %s", c2.GetID())
 
 	// Now the partitions should be divided among these two consumer.
 	// Should be -> c1:[0], c2:[2]
@@ -86,7 +88,7 @@ func TestGetMessages(t *testing.T) {
 	// id : id of the message
 	// partitionKey : This is same as provided in the input
 	// data : []byte the data of the message
-	c1m, err := c1.GetMessages(ctx, 100*time.Millisecond)
+	c1m, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
 		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
 	}
@@ -95,7 +97,7 @@ func TestGetMessages(t *testing.T) {
 	// Consumer also exposes the API to ack the messages
 	// Here we are acking all the messages delivered to consumer 1
 	for _, m := range c1m {
-		err := c1.AckMessages(ctx, m)
+		err := c1.Ack(ctx, m)
 		if err != nil {
 			log.Fatalf("Error happened while Acking c1's message, %v\n", err)
 		}
@@ -103,7 +105,7 @@ func TestGetMessages(t *testing.T) {
 
 	// Reading messaged from consumer 2
 	// this will effectively read messaged from the second partition of the stream
-	c2m, err := c2.GetMessages(ctx, 100*time.Millisecond)
+	c2m, err := c2.Read(ctx, 100*time.Millisecond)
 	if err != nil {
 		log.Fatalf("Error happened while reading messages from Consumer c2, %v", err)
 	}
@@ -130,12 +132,12 @@ func TestGetMessages(t *testing.T) {
 	// This should give you messages which consumer 2 read but didn't ack
 	// As consumer 2 has died, consumer 1 will be reassigned it partition and now owns the messaged from partition 2
 	// as well
-	c1mNew, err := c1.GetMessages(ctx, 100*time.Millisecond)
+	c1mNew, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
 		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
 	}
 
 	log.Printf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), c1mNew)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 }

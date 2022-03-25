@@ -1,4 +1,4 @@
-package segmenter
+package core
 
 type Reason string
 
@@ -6,9 +6,9 @@ const join Reason = "join"
 const leave Reason = "leave"
 
 type member struct {
-	ConsumerId string     `json:"consumerId"`
+	ID         string     `json:"consumerId"`
 	JoinedAt   int64      `json:"joinedAt"`
-	Partitions partitions `json:"partitions"`
+	Partitions Partitions `json:"Partitions"`
 	Group      string     `json:"group"`
 }
 
@@ -23,7 +23,7 @@ type members []member
 
 func (ms members) Contains(memberId string) bool {
 	for _, m := range ms {
-		if m.ConsumerId == memberId {
+		if m.ID == memberId {
 			return true
 		}
 	}
@@ -37,7 +37,7 @@ func (ms members) Add(member member) members {
 func (ms members) Remove(mid string) members {
 	idx := -1
 	for i, m := range ms {
-		if m.ConsumerId == mid {
+		if m.ID == mid {
 			idx = i
 		}
 	}
@@ -65,7 +65,7 @@ func (ms members) RemoveAll(members members) members {
 	removed := make([]member, ms.Len()-members.Len())
 	idx := 0
 	for _, m := range ms {
-		if !members.Contains(m.ConsumerId) {
+		if !members.Contains(m.ID) {
 			removed[idx] = m
 			idx++
 		}
@@ -85,7 +85,7 @@ func (ms members) FilterBy(group string) members {
 
 func (ms members) find(id string) *member {
 	for _, m := range ms {
-		if m.ConsumerId == id {
+		if m.ID == id {
 			return &m
 		}
 	}

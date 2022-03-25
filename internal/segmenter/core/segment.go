@@ -1,10 +1,10 @@
-package segmenter
+package core
 
 import (
 	"context"
-	"github.com/bsm/redislock"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
+	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/rs/zerolog"
 	"time"
 )
@@ -13,15 +13,15 @@ const lockDuration = 10 * time.Second
 
 type segment struct {
 	c         *Consumer
-	partition partition
-	lock      *redislock.Lock
+	partition Partition
+	lock      locker.Lock
 	shutDown  chan bool
 
 	logger *zerolog.Logger
 }
 
-func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment, error) {
-	logger := c.logger.With().Int("partition", int(partition)).Logger()
+func newSegment(ctx context.Context, c *Consumer, partition Partition) (*segment, error) {
+	logger := c.logger.With().Int("Partition", int(partition)).Logger()
 	sg := &segment{partition: partition, c: c, shutDown: make(chan bool), logger: &logger}
 
 	err := sg.checkConsumerGroup()
@@ -29,7 +29,7 @@ func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment
 		return nil, err
 	}
 
-	lock, err := acquireLock(ctx, c.rdb, sg.partitionedStream(), lockDuration, c.id)
+	lock, err := c.locker.Acquire(ctx, sg.partitionedStream(), lockDuration, c.id)
 	if err != nil {
 		logger.Error().Msgf("Failed to Acquire lock with key %s, %v", c.GetStreamName(), err)
 		return nil, err
@@ -45,22 +45,20 @@ func (sg *segment) refreshLock() {
 	for {
 		select {
 		case <-sg.shutDown:
-			_ = sg.releaseLock(ctx)
+			err := sg.lock.Release(ctx)
+			if err != nil {
+				sg.logger.Debug().Err(err).Msgf("Releasing lock with key stream %s, Partition %d", sg.c.GetStreamName(), sg.partition)
+			}
 			return
 		default:
-			err := sg.lock.Refresh(ctx, lockDuration, nil)
+			err := sg.lock.Refresh(ctx, lockDuration)
 			if err != nil {
-				sg.logger.Debug().Msgf("Error happened while refreshing lock %s, err: %v", sg.lock.Key(), err)
+				sg.logger.Debug().Err(err).Msgf("Error happened while refreshing lock %s", sg.lock.Key())
 			}
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}
 
-}
-
-func (sg *segment) releaseLock(ctx context.Context) error {
-	sg.logger.Debug().Msgf("Releasing lock with key stream %s, partition %d", sg.c.GetStreamName(), sg.partition)
-	return sg.lock.Release(ctx)
 }
 
 func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse) {
@@ -138,7 +136,7 @@ func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids
 }
 
 func (sg *segment) partitionedStream() string {
-	return partitionedStreamKey(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition)
+	return PartitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition)
 }
 
 func (sg *segment) ShutDown() {
@@ -156,4 +154,8 @@ func (sg *segment) checkConsumerGroup() error {
 		return err
 	}
 	return nil
+}
+
+func (sg *segment) Ack(ctx context.Context, cmessage *contracts.CMessage) error {
+	return sg.c.rdb.XAck(ctx, sg.partitionedStream(), sg.c.group, cmessage.Id).Err()
 }
