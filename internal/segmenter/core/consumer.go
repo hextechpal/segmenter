@@ -275,21 +275,6 @@ func (c *Consumer) stop(ctx context.Context) error {
 
 }
 
-func (c *Consumer) getLatestControlMessageId(ctx context.Context) (string, error) {
-	result, err := c.rdb.XRevRangeN(ctx, c.s.controlKey(), "+", "-", 1).Result()
-
-	if err != nil && err != redis.Nil {
-		return "", err
-	}
-
-	if err == redis.Nil || len(result) == 0 {
-		return "0-0", nil
-	}
-
-	return result[0].ID, nil
-
-}
-
 func (c *Consumer) beat() {
 	ctx := context.Background()
 	for {

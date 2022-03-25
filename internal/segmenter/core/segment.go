@@ -35,7 +35,6 @@ func newSegment(ctx context.Context, c *Consumer, partition Partition) (*segment
 		return nil, err
 	}
 	sg.lock = lock
-
 	go sg.refreshLock()
 	return sg, nil
 }
