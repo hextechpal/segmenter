@@ -5,8 +5,6 @@ import (
 	"errors"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
-	"github.com/hextechpal/segmenter/internal/segmenter/locker"
-	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/hextechpal/segmenter/internal/segmenter/utils"
 	"github.com/rs/zerolog"
 	"sync"
@@ -15,12 +13,11 @@ import (
 
 const heartBeatDuration = 2 * time.Second
 
+var ConsumerDeadError = errors.New("consumer shut down")
+
 type Consumer struct {
 	mu     sync.Mutex
-	rdb    *redis.Client
 	s      *Stream
-	store  store.Store
-	locker locker.Locker
 	logger *zerolog.Logger
 
 	id                string
@@ -34,8 +31,6 @@ type Consumer struct {
 }
 
 type NewConsumerArgs struct {
-	Store             store.Store
-	Locker            locker.Locker
 	Stream            *Stream
 	BatchSize         int64
 	Group             string
@@ -45,15 +40,11 @@ type NewConsumerArgs struct {
 
 // Public Functions
 
-func NewConsumer(_ context.Context, args *NewConsumerArgs) (*Consumer, error) {
+func NewConsumer(ctx context.Context, args *NewConsumerArgs) (*Consumer, error) {
 	id := utils.GenerateUuid()
 	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Logger()
-
 	c := &Consumer{
-		rdb:    args.Stream.rdb,
 		s:      args.Stream,
-		store:  args.Store,
-		locker: args.Locker,
 		logger: &nLogger,
 
 		id:                id,
@@ -65,6 +56,11 @@ func NewConsumer(_ context.Context, args *NewConsumerArgs) (*Consumer, error) {
 		active:     true,
 		shutDown:   make(chan bool),
 	}
+
+	err := c.checkConsumerGroup(ctx)
+	if err != nil {
+		return nil, err
+	}
 	go c.beat()
 	return c, nil
 }
@@ -74,7 +70,7 @@ func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*
 	defer c.mu.Unlock()
 	c.logger.Debug().Msgf("Get Messages")
 	if !c.active {
-		return nil, errors.New("consumer shut down")
+		return nil, ConsumerDeadError
 	}
 	entries := c.getPendingEntries(ctx)
 	if len(entries) == 0 {
@@ -125,6 +121,7 @@ func (c *Consumer) GetNameSpace() string {
 func (c *Consumer) rePartition(ctx context.Context, partitions Partitions) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.logger.Debug().Msgf("Re Partitioning started, partitions %v", partitions)
 	toBeReleased := make([]Partition, 0)
 	for p := range c.segmentMap {
 		if !partitions.Contains(p) {
@@ -151,7 +148,7 @@ func (c *Consumer) rePartition(ctx context.Context, partitions Partitions) error
 			c.logger.Debug().Msgf("Created segment for Partition : %v", p)
 		}
 	}
-	c.logger.Debug().Msg("Rebalance Completed")
+	c.logger.Debug().Msg("Re Partitioning  completed")
 	return nil
 }
 
@@ -198,7 +195,7 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 	}
 	streamsKey := c.buildStreamsKey()
 	c.logger.Debug().Msgf("Consumer reading new messages from streams %v", streamsKey)
-	result, err := c.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
+	result, err := c.s.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
 		Streams:  c.buildStreamsKey(),
@@ -282,7 +279,7 @@ func (c *Consumer) beat() {
 		case <-c.shutDown:
 			return
 		default:
-			set := c.rdb.Set(ctx, HeartBeat(c.GetNameSpace(), c.GetStreamName(), c.id), time.Now().UnixMilli(), heartBeatDuration)
+			set := c.s.rdb.Set(ctx, HeartBeat(c.GetNameSpace(), c.GetStreamName(), c.id), time.Now().UnixMilli(), heartBeatDuration)
 			if set.Err() != nil {
 				c.logger.Info().Msg("Error occurred while refreshing heartbeat")
 				time.Sleep(100 * time.Millisecond)
@@ -290,4 +287,19 @@ func (c *Consumer) beat() {
 		}
 		time.Sleep(heartBeatDuration)
 	}
+}
+
+func (c *Consumer) checkConsumerGroup(ctx context.Context) error {
+	for i := 0; i < c.s.pcount; i++ {
+		key := PartitionedStream(c.s.ns, c.s.name, Partition(i))
+		err := c.s.rdb.XGroupCreateMkStream(ctx, key, c.group, "$").Err()
+		if err != nil {
+			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
+				continue
+			}
+			c.logger.Debug().Msgf("Error while registering Consumer, %v", err)
+			return err
+		}
+	}
+	return nil
 }

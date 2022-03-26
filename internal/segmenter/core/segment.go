@@ -24,12 +24,7 @@ func newSegment(ctx context.Context, c *Consumer, partition Partition) (*segment
 	logger := c.logger.With().Int("Partition", int(partition)).Logger()
 	sg := &segment{partition: partition, c: c, shutDown: make(chan bool), logger: &logger}
 
-	err := sg.checkConsumerGroup()
-	if err != nil {
-		return nil, err
-	}
-
-	lock, err := c.locker.Acquire(ctx, sg.partitionedStream(), lockDuration, c.id)
+	lock, err := c.s.locker.Acquire(ctx, sg.partitionedStream(), lockDuration, c.id)
 	if err != nil {
 		logger.Error().Msgf("Failed to Acquire lock with key %s, %v", c.GetStreamName(), err)
 		return nil, err
@@ -61,7 +56,7 @@ func (sg *segment) refreshLock() {
 }
 
 func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse) {
-	pending, err := sg.c.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
+	pending, err := sg.c.s.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: sg.partitionedStream(),
 		Group:  sg.c.group,
 		Idle:   sg.c.maxProcessingTime,
@@ -102,7 +97,7 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 }
 
 func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids []string) {
-	result, err := sg.c.rdb.XClaim(ctx, &redis.XClaimArgs{
+	result, err := sg.c.s.rdb.XClaim(ctx, &redis.XClaimArgs{
 		Stream:   sg.partitionedStream(),
 		Group:    sg.c.group,
 		Consumer: sg.c.id,
@@ -142,19 +137,6 @@ func (sg *segment) ShutDown() {
 	sg.shutDown <- true
 }
 
-func (sg *segment) checkConsumerGroup() error {
-	key := sg.partitionedStream()
-	err := sg.c.rdb.XGroupCreateMkStream(context.Background(), key, sg.c.group, "$").Err()
-	if err != nil {
-		if err.Error() == "BUSYGROUP Consumer Group name already exists" {
-			return nil
-		}
-		sg.logger.Debug().Msgf("Error while registering Consumer, %v", err)
-		return err
-	}
-	return nil
-}
-
 func (sg *segment) Ack(ctx context.Context, cmessage *contracts.CMessage) error {
-	return sg.c.rdb.XAck(ctx, sg.partitionedStream(), sg.c.group, cmessage.Id).Err()
+	return sg.c.s.rdb.XAck(ctx, sg.partitionedStream(), sg.c.group, cmessage.Id).Err()
 }

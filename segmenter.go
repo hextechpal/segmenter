@@ -129,7 +129,7 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 	if err != nil {
 		return nil, err
 	}
-	s.logger.Info()
+	s.streams[stream.GetName()] = stream
 	return stream, nil
 }
 

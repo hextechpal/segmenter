@@ -27,7 +27,7 @@ func TestGetMessages(t *testing.T) {
 	}
 	s, err := segmenter.NewSegmenter(&c)
 	if err != nil {
-		log.Fatalf("Error occurred while initializing segmenter, %v", err)
+		t.Fatalf("NewSegmenter(), err = %v", err)
 	}
 
 	// Here we are registering the stream. It takes a
@@ -38,7 +38,7 @@ func TestGetMessages(t *testing.T) {
 
 	st, err := s.RegisterStream(ctx, streamName, 2, 250)
 	if err != nil {
-		log.Fatalf("Error occurred while registering streamName, %v", err)
+		t.Fatalf("RegisterStream(), err = %v", err)
 	}
 
 	// This is how you can register a consumer
@@ -49,18 +49,18 @@ func TestGetMessages(t *testing.T) {
 	// batchSize : batch size of messages
 	// maxProcessingTime : Maximum time before the message is eligible for redelivery. This will come into picture when
 	// a consumer dies, then after re-balancing partitions. the messages will be delivered to new consumers
-	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 5, time.Second)
+	c1, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
 	if err != nil {
-		log.Fatalf("Error happened while registering Consumer c1, %v", err)
+		t.Fatalf("Consumer1 : RegisterConsumer() err = %v", err)
 	}
-	log.Printf("Registered Consumer with ID %s", c1.GetID())
+	t.Logf("Consumer1 Registered id: %s", c1.GetID())
 
 	// Register One more consumer
-	c2, err := s.RegisterConsumer(ctx, streamName, "group1", 2, time.Second)
+	c2, err := s.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
 	if err != nil {
-		log.Fatalf("Error happened while registering Consumer c2, %v", err)
+		t.Fatalf("Consumer2 : RegisterConsumer() err = %v", err)
 	}
-	log.Printf("Registered Consumer with ID %s", c2.GetID())
+	t.Logf("Consumer1 Registered id: %s", c2.GetID())
 
 	// Now the partitions should be divided among these two consumer.
 	// Should be -> c1:[0], c2:[2]
@@ -90,16 +90,16 @@ func TestGetMessages(t *testing.T) {
 	// data : []byte the data of the message
 	c1m, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
-		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
+		t.Fatalf("Consumer1 : Read() err = %v", err)
 	}
-	log.Printf("Comsumer 1 has claimed %d messages from stream %v", len(c1m), c1m)
+	t.Logf("Comsumer1 : Claimed %d messages Messages : %v", len(c1m), c1m)
 
 	// Consumer also exposes the API to ack the messages
 	// Here we are acking all the messages delivered to consumer 1
 	for _, m := range c1m {
 		err := c1.Ack(ctx, m)
 		if err != nil {
-			log.Fatalf("Error happened while Acking c1's message, %v\n", err)
+			t.Fatalf("Error happened while Acking c1's message, %v\n", err)
 		}
 	}
 
@@ -115,7 +115,7 @@ func TestGetMessages(t *testing.T) {
 	}
 
 	// Logging the ids off the message
-	log.Printf("Comsumer 2 has claimed %d messages from stream ids %s\n", len(c2m), ids)
+	//t.Logf("Comsumer 2 has claimed %d messages from stream ids %s\n", len(c2m), ids)
 
 	// Shutting down Consumer 2 without acking the above messages
 	// This will cause the second partition to be assigned again to consumer 1
@@ -134,10 +134,25 @@ func TestGetMessages(t *testing.T) {
 	// as well
 	c1mNew, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
-		log.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
+		t.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
+	}
+	t.Logf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), c1mNew)
+
+	for _, m := range c1mNew {
+		err := c1.Ack(ctx, m)
+		if err != nil {
+			t.Fatalf("Error happened while Acking c1's message, %v\n", err)
+		}
 	}
 
-	log.Printf("Comsumer 1 has claimed %d new messages from stream, ids : %v", len(c1mNew), c1mNew)
+	c1mFinal, err := c1.Read(ctx, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Error happened while reading messages from Consumer c1, %v", err)
+	}
+
+	if len(c1mFinal) != 0 {
+		t.Fatalf("Expected 0 messages got %d", len(c1mFinal))
+	}
 
 	time.Sleep(30 * time.Second)
 }

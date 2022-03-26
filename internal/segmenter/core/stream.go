@@ -105,7 +105,7 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 		s.logger.Error().Msgf("Error happened while sending message %v", err)
 		return "", err
 	}
-	s.logger.Info().Msgf("Sent message with Id %v", id)
+	s.logger.Debug().Msgf("Sent message with Id %v", id)
 	return id, nil
 }
 
@@ -332,10 +332,12 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 			if c, ok := s.consumers[m.ID]; ok {
 				c.logger.Debug().Msg("Starting to rebalance consumer")
 				// TODO: Handle Error, not sure right now what to do on repartitioning error
-				err = c.rePartition(ctx, m.Partitions)
-				if err != nil {
-					c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
-				}
+				go func(pts Partitions) {
+					err := c.rePartition(ctx, pts)
+					if err != nil {
+						c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
+					}
+				}(m.Partitions)
 			}
 		}
 		return message.ID
@@ -346,8 +348,6 @@ func (s *Stream) RegisterConsumer(ctx context.Context, group string, batchSize i
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	c, err := NewConsumer(ctx, &NewConsumerArgs{
-		Store:             s.store,
-		Locker:            s.locker,
 		Stream:            s,
 		Group:             group,
 		BatchSize:         batchSize,
@@ -358,12 +358,13 @@ func (s *Stream) RegisterConsumer(ctx context.Context, group string, batchSize i
 	if err != nil {
 		return nil, err
 	}
-	s.consumers[c.id] = c
 	go s.rebalance(ctx, &memberChangeInfo{
 		Reason:     join,
 		Group:      c.group,
 		ConsumerId: c.id,
 		Ts:         time.Now().UnixMilli(),
 	})
+
+	s.consumers[c.id] = c
 	return c, nil
 }
