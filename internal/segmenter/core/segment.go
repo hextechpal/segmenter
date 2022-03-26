@@ -122,6 +122,7 @@ func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids
 		return
 	}
 
+	sg.logger.Info().Msgf("Claimed %d messages", len(result))
 	ch <- &claimResponse{
 		err:       nil,
 		partition: sg.partition,

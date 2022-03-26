@@ -20,8 +20,8 @@ const (
 
 	// Consumer Settings
 	group     = "multiConsumerTestGrp"
-	batchSize = 2
-	ptime     = 500 * time.Millisecond
+	batchSize = 200
+	ptime     = 3 * time.Second
 )
 
 var ctx = context.Background()
@@ -33,7 +33,7 @@ func init() {
 func createSegmenter(t *testing.T) *segmenter.Segmenter {
 	t.Helper()
 
-	ns := fmt.Sprintf("hextech%d", rand.Intn(20))
+	ns := fmt.Sprintf("hextech%d", rand.Intn(20000))
 	//ns := "hextech"
 	t.Logf("Starting segmenter for Namespace %s", ns)
 	// Register the segmenter
@@ -69,6 +69,7 @@ func TestMultiConsumer(t *testing.T) {
 	}
 	t.Logf("Comsumer Registered : %s\n", c2.GetID())
 
+	time.Sleep(100 * time.Millisecond)
 	// startConsumer routine should ack the read messages or not
 	// this also is indicative of the number of consumers we will spawn
 	type spawnInfo struct {
@@ -93,11 +94,7 @@ func TestMultiConsumer(t *testing.T) {
 		go Read(t, sp.c, sp.ch, sp.ack)
 	}
 
-	// Sleeping so that consumers can rebalance else all the messages will be
-	// consumed by consumers who registered first
-	//time.Sleep(3000 * time.Millisecond)
-
-	msgCount := 10
+	msgCount := 1000
 	go sendMessages(st, msgCount)
 	//time.Sleep(5 * time.Second)
 
@@ -108,16 +105,17 @@ func TestMultiConsumer(t *testing.T) {
 	for time.Since(start) < 500*time.Second && c1Count+c2Count < msgCount {
 		select {
 		case c1Ids := <-sp1.ch:
-			t.Logf("Msgs from consumer 1 %v", c1Ids)
+			t.Logf("Msgs from consumer 1 %v", len(c1Ids))
 			c1Count += len(c1Ids)
 		case c2Ids := <-sp2.ch:
 			c2Count += len(c2Ids)
-			t.Logf("Msgs from consumer 2 %v", c2Ids)
+			t.Logf("Msgs from consumer 2 %v", len(c2Ids))
 		default:
 
 		}
 	}
 
+	t.Logf("Total Messages c1(%s)=%d, c2(%s)=%d", c1.GetID(), c1Count, c2.GetID(), c2Count)
 	if c1Count+c2Count != msgCount {
 		t.Fatalf("No all messages consumed in 5 seconds")
 	}

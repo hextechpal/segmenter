@@ -88,6 +88,9 @@ func (c *Consumer) Ack(ctx context.Context, cmessage *contracts.CMessage) error 
 	if !c.active {
 		return errors.New("consumer is shut down")
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	p := c.s.getPartitionFromKey(cmessage.PartitionKey)
 	sg, ok := c.segmentMap[p]
 	if !ok {
