@@ -89,6 +89,7 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 		messageIds = append(messageIds, xp.ID)
 	}
 
+	sg.logger.Debug().Msgf("Length of pending entries : %d", len(messageIds))
 	ch <- &pendingResponse{
 		err:        nil,
 		partition:  sg.partition,

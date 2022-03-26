@@ -7,6 +7,7 @@ import (
 	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"github.com/hextechpal/segmenter/internal/segmenter/utils"
 	"github.com/rs/zerolog"
+	"math"
 	"sync"
 	"time"
 )
@@ -42,7 +43,7 @@ type NewConsumerArgs struct {
 
 func NewConsumer(ctx context.Context, args *NewConsumerArgs) (*Consumer, error) {
 	id := utils.GenerateUuid()
-	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Logger()
+	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Int64("bsize", args.BatchSize).Logger()
 	c := &Consumer{
 		s:      args.Stream,
 		logger: &nLogger,
@@ -198,11 +199,15 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 	}
 	streamsKey := c.buildStreamsKey()
 	c.logger.Debug().Msgf("Consumer reading new messages from streams %v", streamsKey)
+	count := math.Round(float64(c.batchSize) / float64(len(c.segmentMap)))
+	if count == 0 {
+		count = 1
+	}
 	result, err := c.s.rdb.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.group,
 		Consumer: c.id,
 		Streams:  c.buildStreamsKey(),
-		Count:    c.batchSize,
+		Count:    int64(count),
 		Block:    maxWaitDuration,
 	}).Result()
 
@@ -213,8 +218,9 @@ func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Dura
 	if err != nil {
 		return nil, err
 	}
-	c.logger.Debug().Msgf("Result for new messages %v", result)
-	return mapXStreamToCMessage(result), nil
+	messages := mapXStreamToCMessage(result)
+	c.logger.Debug().Msgf("Result for new messages %v", len(messages))
+	return messages, nil
 }
 
 type claimResponse struct {
