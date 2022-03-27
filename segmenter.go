@@ -2,7 +2,6 @@ package segmenter
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
@@ -155,17 +154,16 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*core.Stream, 
 }
 
 func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*core.StreamDTO, error) {
-	res, err := s.rdb.Get(ctx, s.streamStorageKey(name)).Bytes()
+	var st core.StreamDTO
+	err := s.store.GetKey(ctx, s.streamStorageKey(name), &st)
 	if err == redis.Nil {
 		return nil, nil
-	} else if err != nil {
-		return nil, err
 	}
-	var st core.StreamDTO
-	err = json.Unmarshal(res, &st)
+
 	if err != nil {
 		return nil, err
 	}
+
 	return &st, nil
 }
 
@@ -176,11 +174,8 @@ func (s *Segmenter) saveStream(ctx context.Context, name string, stream *core.St
 	}
 	defer lock.Release(ctx)
 	streamDTO := core.NewStreamDTO(stream)
-	val, err := json.Marshal(streamDTO)
-	if err != nil {
-		return err
-	}
-	return s.rdb.Set(ctx, s.streamStorageKey(name), val, 0).Err()
+
+	return s.store.SetKey(ctx, s.streamStorageKey(name), streamDTO)
 }
 
 func (s *Segmenter) streamStorageKey(name string) string {

@@ -94,6 +94,70 @@ func TestSegmenter_RegisterConsumer(t *testing.T) {
 	}
 }
 
+func TestSegmenter_RegisterStream(t *testing.T) {
+
+	type args struct {
+		ctx    context.Context
+		name   string
+		pcount int
+		psize  int64
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *core.Stream
+		wantErr bool
+	}{
+		{
+			name: "Invalid name",
+			args: args{
+				ctx:    context.Background(),
+				name:   "",
+				pcount: 5,
+				psize:  100,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "Invalid Partition Count",
+			args: args{
+				ctx:    context.Background(),
+				name:   "sgroot",
+				pcount: 0,
+				psize:  100,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "Invalid Partition size",
+			args: args{
+				ctx:    context.Background(),
+				name:   "sgroot",
+				pcount: 5,
+				psize:  0,
+			},
+			want:    nil,
+			wantErr: true,
+		},
+	}
+	rdb, _ := redismock.NewClientMock()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := createSegmenter(t, rdb)
+			got, err := s.RegisterStream(tt.args.ctx, tt.args.name, tt.args.pcount, tt.args.psize)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RegisterConsumer() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("RegisterConsumer() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func createSegmenter(t *testing.T, rdb *redis.Client) *Segmenter {
 	t.Helper()
 	l := zerolog.New(os.Stderr).With().Logger()

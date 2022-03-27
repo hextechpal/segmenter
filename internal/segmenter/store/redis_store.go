@@ -26,9 +26,7 @@ func (i InvalidTypeError) Error() string {
 
 func (r *redisStore) GetKey(ctx context.Context, key string, v any) error {
 	bytes, err := r.rdb.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil
-	} else if err != nil {
+	if err != nil {
 		return err
 	} else {
 		rv := reflect.ValueOf(v)

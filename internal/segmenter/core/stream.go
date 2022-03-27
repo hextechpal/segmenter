@@ -131,7 +131,7 @@ func (s *Stream) getPartitionFromKey(partitionKey string) Partition {
 func (s *Stream) members(ctx context.Context, group string) (members, error) {
 	members := make([]member, 0)
 	err := s.store.GetKey(ctx, s.memberShipGroupKey(group), &members)
-	if err != nil {
+	if err != nil && err != redis.Nil {
 		return nil, err
 	}
 	return members, nil
