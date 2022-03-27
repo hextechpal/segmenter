@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
-	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
-	"google.golang.org/protobuf/encoding/protojson"
 	"os"
 	"reflect"
 	"testing"
@@ -391,76 +389,76 @@ func TestStream_members(t *testing.T) {
 	}
 }
 
-func TestStream_Send(t *testing.T) {
-	rdb, mock := redismock.NewClientMock()
-	type args struct {
-		ctx context.Context
-		pmg *contracts.PMessage
-	}
-	tests := []struct {
-		name    string
-		mockErr error
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "No errors",
-			args: args{
-				ctx: context.Background(),
-				pmg: &contracts.PMessage{
-					Data:         []byte("No errors test case"),
-					PartitionKey: "123",
-				},
-			},
-			want:    "id1",
-			wantErr: false,
-		},
-		{
-			name: "with errors",
-			args: args{
-				ctx: context.Background(),
-				pmg: &contracts.PMessage{
-					Data:         []byte("No errors test case"),
-					PartitionKey: "123",
-				},
-			},
-			mockErr: errors.New("xadd error"),
-			want:    "",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			stream := createStream(t, rdb, 5, "sgNs", "sgSteam")
-			data, _ := protojson.Marshal(tt.args.pmg)
-			a := &redis.XAddArgs{
-				Stream: PartitionedStream(stream.ns, stream.name, stream.getPartitionFromKey(tt.args.pmg.PartitionKey)),
-				MaxLen: 100,
-				Values: map[string]interface{}{
-					"data":         data,
-					"partitionKey": tt.args.pmg.PartitionKey,
-				},
-			}
-			if tt.mockErr != nil {
-				mock.ExpectXAdd(a).SetErr(tt.mockErr)
-			} else {
-				mock.ExpectXAdd(a).SetVal(tt.want)
-			}
-
-			got, err := stream.Send(tt.args.ctx, tt.args.pmg)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("allMembers() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-
-}
+//func TestStream_Send(t *testing.T) {
+//	rdb, mock := redismock.NewClientMock()
+//	type args struct {
+//		ctx context.Context
+//		pmg *contracts.PMessage
+//	}
+//	tests := []struct {
+//		name    string
+//		mockErr error
+//		args    args
+//		want    string
+//		wantErr bool
+//	}{
+//		{
+//			name: "No errors",
+//			args: args{
+//				ctx: context.Background(),
+//				pmg: &contracts.PMessage{
+//					Data:         []byte("No errors test case"),
+//					PartitionKey: "123",
+//				},
+//			},
+//			want:    "id1",
+//			wantErr: false,
+//		},
+//		{
+//			name: "with errors",
+//			args: args{
+//				ctx: context.Background(),
+//				pmg: &contracts.PMessage{
+//					Data:         []byte("No errors test case"),
+//					PartitionKey: "123",
+//				},
+//			},
+//			mockErr: errors.New("xadd error"),
+//			want:    "",
+//			wantErr: true,
+//		},
+//	}
+//
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			stream := createStream(t, rdb, 5, "sgNs", "sgSteam")
+//			data, _ := protojson.Marshal(tt.args.pmg)
+//			a := &redis.XAddArgs{
+//				Stream: PartitionedStream(stream.ns, stream.name, stream.getPartitionFromKey(tt.args.pmg.PartitionKey)),
+//				MaxLen: 100,
+//				Values: map[string]interface{}{
+//					"data":         data,
+//					"partitionKey": tt.args.pmg.PartitionKey,
+//				},
+//			}
+//			if tt.mockErr != nil {
+//				mock.ExpectXAdd(a).SetErr(tt.mockErr)
+//			} else {
+//				mock.ExpectXAdd(a).SetVal(tt.want)
+//			}
+//
+//			got, err := stream.Send(tt.args.ctx, tt.args.pmg)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("allMembers() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//
+//}
 
 func TestStream_computeMembers(t *testing.T) {
 	jt := time.Now().UnixMilli()
