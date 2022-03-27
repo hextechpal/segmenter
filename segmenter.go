@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+var NonExistentStream = errors.New("stream do not exist")
 var EmptyStreamName = errors.New("stream name cannot be empty")
 var EmptyGroupName = errors.New("group cannot be empty")
 var InvalidBatchSize = errors.New("batch size cannot less than 1")
@@ -78,7 +79,7 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 	stream, err := s.findStream(ctx, name)
 	if err != nil || stream == nil {
 		// TODO handle the case when stream do not exist
-		return nil, errors.New("no stream exist")
+		return nil, NonExistentStream
 	}
 
 	s.logger.Debug().Msgf("registering new consumer for stream %s", stream.GetName())
