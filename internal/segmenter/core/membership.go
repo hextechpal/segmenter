@@ -72,22 +72,3 @@ func (ms members) RemoveAll(members members) members {
 	}
 	return removed
 }
-
-func (ms members) FilterBy(group string) members {
-	nMembers := make([]member, 0)
-	for _, m := range ms {
-		if m.Group == group {
-			nMembers = append(nMembers, m)
-		}
-	}
-	return nMembers
-}
-
-func (ms members) find(id string) *member {
-	for _, m := range ms {
-		if m.ID == id {
-			return &m
-		}
-	}
-	return nil
-}

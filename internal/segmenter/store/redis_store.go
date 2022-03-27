@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"reflect"
@@ -21,7 +20,7 @@ type InvalidTypeError struct {
 	tp reflect.Type
 }
 
-func (i *InvalidTypeError) Error() string {
+func (i InvalidTypeError) Error() string {
 	return fmt.Sprintf("Invalid type %q, must be a pointer type", i.tp)
 }
 
@@ -34,7 +33,7 @@ func (r *redisStore) GetKey(ctx context.Context, key string, v any) error {
 	} else {
 		rv := reflect.ValueOf(v)
 		if rv.Kind() != reflect.Pointer || rv.IsNil() {
-			return errors.New("type %")
+			return InvalidTypeError{tp: rv.Type()}
 		}
 		err = json.Unmarshal(bytes, v)
 		if err != nil {

@@ -172,16 +172,8 @@ type pendingResponse struct {
 }
 
 func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string {
+	ch, pc := c.queuePending(ctx)
 	pending := make(map[Partition][]string)
-	ch := make(chan *pendingResponse)
-
-	c.mu.Lock()
-	pc := len(c.segmentMap)
-	for _, sg := range c.segmentMap {
-		go sg.pendingEntries(ctx, ch)
-	}
-	c.mu.Unlock()
-
 	for i := 0; i < pc; i++ {
 		pr := <-ch
 		if pr.err != nil {
@@ -192,6 +184,17 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string
 		}
 	}
 	return pending
+}
+
+func (c *Consumer) queuePending(ctx context.Context) (chan *pendingResponse, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ch := make(chan *pendingResponse)
+	pc := len(c.segmentMap)
+	for _, sg := range c.segmentMap {
+		go sg.pendingEntries(ctx, ch)
+	}
+	return ch, pc
 }
 
 func (c *Consumer) readNewMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
@@ -267,19 +270,6 @@ func mapXMessageToCMessage(msgs []redis.XMessage) []*contracts.CMessage {
 		cmessages = append(cmessages, &cm)
 	}
 	return cmessages
-}
-
-func (c *Consumer) stop(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.active = false
-	return c.s.rebalance(ctx, &memberChangeInfo{
-		Reason:     leave,
-		ConsumerId: c.id,
-		Group:      c.group,
-		Ts:         time.Now().UnixMilli(),
-	})
-
 }
 
 func (c *Consumer) beat() {

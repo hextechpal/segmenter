@@ -98,59 +98,6 @@ func TestMembers_Contains(t *testing.T) {
 	}
 }
 
-func TestMembers_FilterBy(t *testing.T) {
-	type args struct {
-		group string
-	}
-	tests := []struct {
-		name string
-		ms   members
-		args args
-		want members
-	}{
-		{
-			name: "Test1 - member exist",
-			ms: []member{
-				{
-					ID:         "cid1",
-					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
-					Group:      "group1",
-				},
-			},
-			args: args{group: "group1"},
-			want: []member{
-				{
-					ID:         "cid1",
-					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
-					Group:      "group1",
-				},
-			},
-		},
-		{
-			name: "Test2 - member do not exist",
-			ms: []member{
-				{
-					ID:         "cid1",
-					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
-					Group:      "group1",
-				},
-			},
-			args: args{group: "group2"},
-			want: []member{},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.ms.FilterBy(tt.args.group); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("FilterBy() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestMembers_RemoveAll(t *testing.T) {
 	type args struct {
 		members members
