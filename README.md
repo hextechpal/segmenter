@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/hextechpal/segmenter/branch/master/graph/badge.svg?token=5SJ2ZKHIFJ)](https://codecov.io/gh/hextechpal/segmenter)
+
 # segmenter
 
 This library implements kafka like partitions(segments) over redis streams. You can define the number of partitions for a stream and it makes sure that
