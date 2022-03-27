@@ -137,10 +137,6 @@ func (s *Stream) members(ctx context.Context, group string) (members, error) {
 	return members, nil
 }
 
-func (s *Stream) memberShipKey() string {
-	return fmt.Sprintf("__%s:%s:mbsh", s.ns, s.name)
-}
-
 func (s *Stream) memberShipGroupKey(group string) string {
 	return fmt.Sprintf("__%s:%s:%s:mbsh", s.ns, s.name, group)
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/rs/zerolog"
 	"time"
@@ -66,15 +65,6 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 		Count:  sg.c.batchSize,
 	}).Result()
 
-	if err == redis.Nil {
-		ch <- &pendingResponse{
-			err:        nil,
-			partition:  sg.partition,
-			messageIds: []string{},
-		}
-		return
-	}
-
 	if err != nil {
 		ch <- &pendingResponse{
 			err:        err,
@@ -105,15 +95,6 @@ func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids
 		Consumer: sg.c.id,
 		Messages: ids,
 	}).Result()
-
-	if err == redis.Nil {
-		ch <- &claimResponse{
-			err:       nil,
-			partition: sg.partition,
-			messages:  []*contracts.CMessage{},
-		}
-		return
-	}
 
 	if err != nil {
 		ch <- &claimResponse{
