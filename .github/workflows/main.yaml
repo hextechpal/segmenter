@@ -24,7 +24,7 @@ jobs:
       - name: Run Tests
         run: go test -coverpkg=./... -coverprofile=profile.cov ./...
 
-      - name: Upload
-          uses: codecov/codecov-action@v2
-          with:
-            files: ./profile.cov
+      - name: Codecov
+        uses: codecov/codecov-action@v2.1.0
+        with:
+          files: ./profile.cov
