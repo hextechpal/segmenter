@@ -237,7 +237,7 @@ func (s *Stream) performMaintenance(ctx context.Context) error {
 func (s *Stream) calculateDeadMembers(ctx context.Context, members members) members {
 	keys := make([]string, members.Len())
 	for i := 0; i < members.Len(); i++ {
-		keys[i] = HeartBeat(s.ns, s.name, members[i].ID)
+		keys[i] = HeartBeat(s.ns, s.name, members[i].ID, members[i].Group)
 	}
 	res := s.rdb.MGet(ctx, keys...)
 	dead := make([]member, 0)

@@ -75,12 +75,12 @@ func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*
 	}
 	entries := c.getPendingEntries(ctx)
 	if len(entries) == 0 {
-		return c.getNewMessages(ctx, maxWaitDuration)
+		return c.readNewMessages(ctx, maxWaitDuration)
 	}
 
 	claimed := c.claimEntries(ctx, entries)
 	if len(claimed) == 0 {
-		return c.getNewMessages(ctx, maxWaitDuration)
+		return c.readNewMessages(ctx, maxWaitDuration)
 	}
 	return claimed, nil
 }
@@ -193,7 +193,7 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string
 	return pending
 }
 
-func (c *Consumer) getNewMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
+func (c *Consumer) readNewMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
 	if len(c.segmentMap) == 0 {
 		return []*contracts.CMessage{}, nil
 	}
@@ -288,7 +288,7 @@ func (c *Consumer) beat() {
 		case <-c.shutDown:
 			return
 		default:
-			set := c.s.rdb.Set(ctx, HeartBeat(c.GetNameSpace(), c.GetStreamName(), c.id), time.Now().UnixMilli(), heartBeatDuration)
+			set := c.s.rdb.Set(ctx, HeartBeat(c.GetNameSpace(), c.GetStreamName(), c.id, c.group), time.Now().UnixMilli(), heartBeatDuration)
 			if set.Err() != nil {
 				c.logger.Info().Msg("Error occurred while refreshing heartbeat")
 				time.Sleep(100 * time.Millisecond)
