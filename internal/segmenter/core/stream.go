@@ -42,7 +42,7 @@ type Stream struct {
 	rdb       *redis.Client
 	store     store.Store
 	locker    locker.Locker
-	consumers map[string]*Consumer
+	consumers map[string]map[string]*Consumer
 
 	ns     string
 	name   string
@@ -59,27 +59,28 @@ type NewStreamArgs struct {
 	Pcount int
 	Psize  int64
 	Logger *zerolog.Logger
+	Store  store.Store
+	Locker locker.Locker
 }
 
 func NewStream(_ context.Context, args *NewStreamArgs) *Stream {
 	nLogger := args.Logger.With().Str("stream", args.Name).Int("Pcount", args.Pcount).Logger()
 	s := &Stream{
 		rdb:       args.Rdb,
-		store:     store.NewRedisStore(args.Rdb),
-		locker:    locker.NewRedisLocker(args.Rdb),
-		consumers: make(map[string]*Consumer),
+		store:     args.Store,
+		locker:    args.Locker,
+		consumers: make(map[string]map[string]*Consumer),
 		ns:        args.Ns,
 		name:      args.Name,
 		pcount:    args.Pcount,
 		psize:     args.Psize,
 		logger:    &nLogger,
 	}
-	go s.maintenanceLoop()
 	go s.controlLoop()
 	return s
 }
 
-func NewStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *StreamDTO, logger *zerolog.Logger) *Stream {
+func NewStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *StreamDTO, s store.Store, l locker.Locker, logger *zerolog.Logger) *Stream {
 	return NewStream(ctx, &NewStreamArgs{
 		Rdb:    rdb,
 		Ns:     dto.Ns,
@@ -87,13 +88,15 @@ func NewStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *StreamDTO, lo
 		Pcount: dto.Pcount,
 		Psize:  dto.Psize,
 		Logger: logger,
+		Store:  s,
+		Locker: l,
 	})
 }
 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
 	data, _ := protojson.Marshal(m)
 	id, err := s.rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: s.partitionedStream(m.GetPartitionKey()),
+		Stream: PartitionedStream(s.ns, s.name, s.getPartitionFromKey(m.GetPartitionKey())),
 		MaxLen: s.psize,
 		Values: map[string]interface{}{
 			"data":         data,
@@ -121,38 +124,30 @@ func (s *Stream) GetPartitionCount() int {
 	return s.pcount
 }
 
-func (s *Stream) partitionedStream(partitionKey string) string {
-	return PartitionedStream(s.ns, s.name, s.getPartitionFromKey(partitionKey))
-}
-
 func (s *Stream) getPartitionFromKey(partitionKey string) Partition {
 	return Partition(int(utils.Hash(partitionKey)) % s.pcount)
 }
 
-func (s *Stream) allMembers(ctx context.Context) (members, error) {
+func (s *Stream) members(ctx context.Context, group string) (members, error) {
 	members := make([]member, 0)
-	err := s.store.GetKey(ctx, s.memberShipKey(), &members)
+	err := s.store.GetKey(ctx, s.memberShipGroupKey(group), &members)
 	if err != nil {
 		return nil, err
 	}
 	return members, nil
 }
 
-func (s *Stream) members(ctx context.Context, group string) (members, error) {
-	allMembers, err := s.allMembers(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return allMembers.FilterBy(group), nil
-}
-
 func (s *Stream) memberShipKey() string {
-	return fmt.Sprintf("__%s:__%s:__mbsh", s.ns, s.name)
+	return fmt.Sprintf("__%s:%s:mbsh", s.ns, s.name)
 }
 
-func (s *Stream) updateMembers(ctx context.Context, oldMembers members) error {
+func (s *Stream) memberShipGroupKey(group string) string {
+	return fmt.Sprintf("__%s:%s:%s:mbsh", s.ns, s.name, group)
+}
+
+func (s *Stream) updateMembers(ctx context.Context, oldMembers members, group string) error {
 	newMembers := s.computeMemberships(oldMembers)
-	err := s.store.SetKey(ctx, s.memberShipKey(), newMembers)
+	err := s.store.SetKey(ctx, s.memberShipGroupKey(group), newMembers)
 	if err != nil {
 		return err
 	}
@@ -199,12 +194,12 @@ func (s *Stream) sendControlMessage(ctx context.Context, members members) error 
 }
 
 func (s *Stream) controlKey() string {
-	return fmt.Sprintf("__%s:__%s:__ctrl", s.ns, s.name)
+	return fmt.Sprintf("__%s:%s:ctrl", s.ns, s.name)
 }
 
-func (s *Stream) maintenanceLoop() {
+func (s *Stream) maintenanceLoop(group string) {
 	for {
-		err := s.performMaintenance(context.Background())
+		err := s.performMaintenance(context.Background(), group)
 		if err != nil {
 			time.Sleep(200 * time.Millisecond)
 		}
@@ -213,14 +208,19 @@ func (s *Stream) maintenanceLoop() {
 
 }
 
-func (s *Stream) performMaintenance(ctx context.Context) error {
-	lock, err := s.locker.Acquire(ctx, StreamAdmin(s.ns, s.name), 100*time.Millisecond, "")
+func (s *Stream) performMaintenance(ctx context.Context, group string) error {
+	lock, err := s.locker.Acquire(ctx, s.streamGroupAdmin(group), 100*time.Millisecond, "")
 	if err != nil {
 		return err
 	}
-	defer lock.Release(ctx)
+	defer func(lock locker.Lock, ctx context.Context) {
+		err := lock.Release(ctx)
+		if err != nil {
+			s.logger.Error().Err(err).Msgf("error releasing stream admin lock")
+		}
+	}(lock, ctx)
 
-	members, err := s.allMembers(ctx)
+	members, err := s.members(ctx, group)
 	if err != nil {
 		return err
 	}
@@ -231,7 +231,7 @@ func (s *Stream) performMaintenance(ctx context.Context) error {
 	}
 	aliveMembers := members.RemoveAll(deadMembers)
 	sort.Sort(aliveMembers)
-	return s.updateMembers(ctx, aliveMembers)
+	return s.updateMembers(ctx, aliveMembers, group)
 }
 
 func (s *Stream) calculateDeadMembers(ctx context.Context, members members) members {
@@ -250,11 +250,16 @@ func (s *Stream) calculateDeadMembers(ctx context.Context, members members) memb
 }
 
 func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) error {
-	lock, err := s.locker.Acquire(ctx, StreamAdmin(s.ns, s.name), 1*time.Second, changeInfo.ConsumerId)
+	lock, err := s.locker.Acquire(ctx, s.streamGroupAdmin(changeInfo.Group), 1*time.Second, changeInfo.ConsumerId)
 	if err != nil {
 		return err
 	}
-	defer lock.Release(ctx)
+	defer func(lock locker.Lock, ctx context.Context) {
+		err := lock.Release(ctx)
+		if err != nil {
+			s.logger.Error().Err(err).Msgf("Error while releasing lock")
+		}
+	}(lock, ctx)
 
 	members, err, done := s.computeMembers(ctx, changeInfo)
 	if err != nil {
@@ -265,7 +270,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) er
 		return nil
 	}
 
-	return s.updateMembers(ctx, members)
+	return s.updateMembers(ctx, members, changeInfo.Group)
 }
 
 func (s *Stream) computeMembers(ctx context.Context, changeInfo *memberChangeInfo) (members, error, bool) {
@@ -329,16 +334,19 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		for _, m := range members {
-			if c, ok := s.consumers[m.ID]; ok {
-				c.logger.Debug().Msg("Starting to rebalance consumer")
-				// TODO: Handle Error, not sure right now what to do on repartitioning error
-				go func(pts Partitions) {
-					err := c.rePartition(ctx, pts)
-					if err != nil {
-						c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
-					}
-				}(m.Partitions)
+			if cmap, ok := s.consumers[m.Group]; ok {
+				if c, ok := cmap[m.ID]; ok {
+					c.logger.Debug().Msg("Starting to rebalance consumer")
+					// TODO: Handle Error, not sure right now what to do on repartitioning error
+					go func(pts Partitions) {
+						err := c.rePartition(ctx, pts)
+						if err != nil {
+							c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
+						}
+					}(m.Partitions)
+				}
 			}
+
 		}
 		return message.ID
 	}
@@ -358,13 +366,33 @@ func (s *Stream) RegisterConsumer(ctx context.Context, group string, batchSize i
 	if err != nil {
 		return nil, err
 	}
-	go s.rebalance(ctx, &memberChangeInfo{
-		Reason:     join,
-		Group:      c.group,
-		ConsumerId: c.id,
-		Ts:         time.Now().UnixMilli(),
-	})
 
-	s.consumers[c.id] = c
+	if _, ok := s.consumers[c.group]; !ok {
+		err := s.performMaintenance(ctx, c.group)
+		if err != nil {
+			_ = c.ShutDown()
+			return nil, err
+		}
+		s.consumers[c.group] = make(map[string]*Consumer)
+		go s.maintenanceLoop(c.group)
+	}
+	s.consumers[c.group][c.id] = c
+
+	go func() {
+		err := s.rebalance(ctx, &memberChangeInfo{
+			Reason:     join,
+			Group:      c.group,
+			ConsumerId: c.id,
+			Ts:         time.Now().UnixMilli(),
+		})
+		if err != nil {
+			c.logger.Error().Err(err).Msgf("Error while repartitioning")
+		}
+	}()
+
 	return c, nil
+}
+
+func (s *Stream) streamGroupAdmin(group string) string {
+	return fmt.Sprintf("__%s:%s:%s:admin", s.ns, s.name, group)
 }

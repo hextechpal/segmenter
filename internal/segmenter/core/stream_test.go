@@ -33,7 +33,7 @@ func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name strin
 	}
 }
 
-func setupMembers(t *testing.T, pc int, ns, sName string, mCount int) members {
+func setupMembers(t *testing.T, pc int, ns, sName, group string, mCount int) members {
 	t.Helper()
 	allPartitions := make([]Partition, pc)
 	allMembers := make([]member, mCount)
@@ -53,7 +53,7 @@ func setupMembers(t *testing.T, pc int, ns, sName string, mCount int) members {
 			ID:         fmt.Sprintf("consume%d", i),
 			JoinedAt:   time.Now().UnixMilli(),
 			Partitions: p,
-			Group:      "group1",
+			Group:      group,
 		}
 		allMembers[i] = m
 
@@ -236,8 +236,8 @@ func TestStream_controlKey(t *testing.T) {
 		fields fields
 		want   string
 	}{
-		{"Test1", fields{1, "ns1", "name1"}, "__ns1:__name1:__ctrl"},
-		{"Test2", fields{1, "ns2", "name2"}, "__ns2:__name2:__ctrl"},
+		{"Test1", fields{1, "ns1", "name1"}, "__ns1:name1:ctrl"},
+		{"Test2", fields{1, "ns2", "name2"}, "__ns2:name2:ctrl"},
 	}
 	rdb, _ := redismock.NewClientMock()
 	for _, tt := range tests {
@@ -255,7 +255,8 @@ func TestStream_calculateDeadMembers(t *testing.T) {
 	sname := "sgStreamName"
 	pc := 7
 	mCount := 3
-	allMembers := setupMembers(t, pc, ns, sname, mCount)
+	group := "group"
+	allMembers := setupMembers(t, pc, ns, sname, group, mCount)
 
 	type args struct {
 		ctx     context.Context
@@ -302,7 +303,7 @@ func TestStream_calculateDeadMembers(t *testing.T) {
 			hbs := make([]string, mCount)
 			alive := make([]interface{}, mCount)
 			for i, m := range allMembers {
-				hbs[i] = fmt.Sprintf("__%s:__%s:__beat:%s", ns, sname, m.ID)
+				hbs[i] = fmt.Sprintf("__%s:%s:%s:beat:%s", ns, sname, group, m.ID)
 			}
 			for i, mc := range tt.alive {
 				alive[i] = allMembers[mc]
@@ -315,84 +316,12 @@ func TestStream_calculateDeadMembers(t *testing.T) {
 	}
 }
 
-func TestStream_allMembers(t *testing.T) {
-	ns := "sgNs"
-	sname := "sgStreamName"
-	pc := 7
-	mCount := 3
-	allMembers := setupMembers(t, pc, ns, sname, mCount)
-	type args struct {
-		ctx context.Context
-	}
-	tests := []struct {
-		name    string
-		mockErr error
-		mockVal members
-		args    args
-		want    members
-		wantErr bool
-	}{
-		{
-			name: "Nil key",
-			args: args{
-				ctx: context.Background(),
-			},
-			mockErr: redis.Nil,
-			want:    []member{},
-			wantErr: false,
-		},
-		{
-			name: "Correct Key",
-			args: args{
-				ctx: context.Background(),
-			},
-			mockVal: allMembers,
-			want:    allMembers,
-			wantErr: false,
-		},
-		{
-			name: "Unknown Error",
-			args: args{
-				ctx: context.Background(),
-			},
-			mockErr: errors.New("unknown error"),
-			mockVal: allMembers,
-			want:    nil,
-			wantErr: true,
-		},
-	}
-	rdb, mock := redismock.NewClientMock()
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := createStream(t, rdb, pc, ns, sname)
-			if tt.mockErr != nil {
-				mock.ExpectGet(s.memberShipKey()).SetErr(tt.mockErr)
-			} else {
-				val, err := json.Marshal(tt.mockVal)
-				if err != nil {
-					t.Fatalf("Error serializing members")
-					return
-				}
-				mock.ExpectGet(s.memberShipKey()).SetVal(string(val))
-			}
-			got, err := s.allMembers(tt.args.ctx)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("allMembers() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("allMembers() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestStream_members(t *testing.T) {
 	ns := "sgNs"
 	sname := "sgStreamName"
 	pc := 7
 	mCount := 3
-	allMembers := setupMembers(t, pc, ns, sname, mCount)
+	allMembers := setupMembers(t, pc, ns, sname, "", mCount)
 	type args struct {
 		ctx   context.Context
 		group string
@@ -425,16 +354,6 @@ func TestStream_members(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "InCorrect Group",
-			args: args{
-				ctx:   context.Background(),
-				group: "group2",
-			},
-			mockVal: allMembers,
-			want:    []member{},
-			wantErr: false,
-		},
-		{
 			name: "Unknown Error",
 			args: args{
 				ctx:   context.Background(),
@@ -451,14 +370,14 @@ func TestStream_members(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := createStream(t, rdb, pc, ns, sname)
 			if tt.mockErr != nil {
-				mock.ExpectGet(s.memberShipKey()).SetErr(tt.mockErr)
+				mock.ExpectGet(s.memberShipGroupKey(tt.args.group)).SetErr(tt.mockErr)
 			} else {
 				val, err := json.Marshal(tt.mockVal)
 				if err != nil {
 					t.Fatalf("Error serializing members")
 					return
 				}
-				mock.ExpectGet(s.memberShipKey()).SetVal(string(val))
+				mock.ExpectGet(s.memberShipGroupKey(tt.args.group)).SetVal(string(val))
 			}
 			got, err := s.members(tt.args.ctx, tt.args.group)
 			if (err != nil) != tt.wantErr {
@@ -517,7 +436,7 @@ func TestStream_Send(t *testing.T) {
 			stream := createStream(t, rdb, 5, "sgNs", "sgSteam")
 			data, _ := protojson.Marshal(tt.args.pmg)
 			a := &redis.XAddArgs{
-				Stream: stream.partitionedStream(tt.args.pmg.PartitionKey),
+				Stream: PartitionedStream(stream.ns, stream.name, stream.getPartitionFromKey(tt.args.pmg.PartitionKey)),
 				MaxLen: 100,
 				Values: map[string]interface{}{
 					"data":         data,
@@ -674,9 +593,9 @@ func TestStream_computeMembers(t *testing.T) {
 			s := createStream(t, rdb, 5, "sgNs", "sgSteam")
 			data, _ := json.Marshal(tt.originalMembers)
 			if tt.mockErr != nil {
-				mock.ExpectGet(s.memberShipKey()).SetErr(tt.mockErr)
+				mock.ExpectGet(s.memberShipGroupKey(tt.args.changeInfo.Group)).SetErr(tt.mockErr)
 			} else {
-				mock.ExpectGet(s.memberShipKey()).SetVal(string(data))
+				mock.ExpectGet(s.memberShipGroupKey(tt.args.changeInfo.Group)).SetVal(string(data))
 
 			}
 			got, got1, got2 := s.computeMembers(tt.args.ctx, tt.args.changeInfo)

@@ -26,11 +26,12 @@ type spawnInfo struct {
 	ack bool
 }
 
+var ctx = context.Background()
+
 func createSegmenter(t *testing.T) *segmenter.Segmenter {
 	t.Helper()
 
 	ns := fmt.Sprintf("hextech%d", rand.Intn(20000))
-	//ns := "hextech"
 	t.Logf("Starting segmenter for Namespace %s", ns)
 	// Register the segmenter
 	c := segmenter.Config{
@@ -49,10 +50,32 @@ func sendMessages(t *testing.T, st *core.Stream, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
 		uuid := fmt.Sprintf("uuid_%d", rand.Intn(1000))
+		// This is how you send data to the stream
+		// It takes a PMessage (producer message). It has only 2 fields
+		//
+		// data : []byte, bytes of data which you want to send to stream
+		//
+		// partitionKey : based in the partitionKey your data will be sent to appropriate partition based on a
+		// pre-defined hash function. This Hash function can be fed as an input to segmenter in future
+
+		// If your message is sent successfully we return you the id of the message (ignored below)
 		_, _ = st.Send(context.TODO(), &contracts.PMessage{
 			Data:         []byte(fmt.Sprintf("Message with uuid : %s", uuid)),
 			PartitionKey: uuid,
 		})
+	}
+}
+
+func registerConsumer(t *testing.T, ctx context.Context, seg *segmenter.Segmenter, streamName string, group string, ptime time.Duration, ack bool) spawnInfo {
+	c1, err := seg.RegisterConsumer(ctx, streamName, group, batchSize, ptime)
+	if err != nil {
+		t.Fatalf("RegisterStream(), err = %s", err)
+	}
+	t.Logf("Comsumer Registered : %s\n", c1.GetID())
+	return spawnInfo{
+		c:   c1,
+		ch:  make(chan []string),
+		ack: ack,
 	}
 }
 

@@ -67,12 +67,10 @@ func NewConsumer(ctx context.Context, args *NewConsumerArgs) (*Consumer, error) 
 }
 
 func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.logger.Debug().Msgf("Get Messages")
-	if !c.active {
+	if !c.isActive() {
 		return nil, ConsumerDeadError
 	}
+
 	entries := c.getPendingEntries(ctx)
 	if len(entries) == 0 {
 		return c.readNewMessages(ctx, maxWaitDuration)
@@ -86,18 +84,12 @@ func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*
 }
 
 func (c *Consumer) Ack(ctx context.Context, cmessage *contracts.CMessage) error {
-	if !c.active {
-		return errors.New("consumer is shut down")
+	if !c.isActive() {
+		return ConsumerDeadError
 	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	p := c.s.getPartitionFromKey(cmessage.PartitionKey)
-	sg, ok := c.segmentMap[p]
-	if !ok {
-		return errors.New("partition not assigned")
-	}
-	return sg.Ack(ctx, cmessage)
+	stream := PartitionedStream(c.s.ns, c.s.name, p)
+	return c.s.rdb.XAck(ctx, stream, c.group, cmessage.Id).Err()
 }
 
 func (c *Consumer) ShutDown() error {
@@ -157,11 +149,16 @@ func (c *Consumer) rePartition(ctx context.Context, partitions Partitions) error
 }
 
 func (c *Consumer) buildStreamsKey() []string {
-	i := 0
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	segmentCount := len(c.segmentMap)
+	if segmentCount == 0 {
+		return []string{}
+	}
+	i := 0
 	streams := make([]string, 2*segmentCount)
 	for _, sg := range c.segmentMap {
-		streams[i] = sg.partitionedStream()
+		streams[i] = PartitionedStream(c.GetNameSpace(), c.GetStreamName(), sg.partition)
 		streams[i+segmentCount] = ">"
 		i += 1
 	}
@@ -177,11 +174,15 @@ type pendingResponse struct {
 func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string {
 	pending := make(map[Partition][]string)
 	ch := make(chan *pendingResponse)
+
+	c.mu.Lock()
+	pc := len(c.segmentMap)
 	for _, sg := range c.segmentMap {
 		go sg.pendingEntries(ctx, ch)
 	}
+	c.mu.Unlock()
 
-	for i := 0; i < len(c.segmentMap); i++ {
+	for i := 0; i < pc; i++ {
 		pr := <-ch
 		if pr.err != nil {
 			continue
@@ -194,10 +195,10 @@ func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string
 }
 
 func (c *Consumer) readNewMessages(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
-	if len(c.segmentMap) == 0 {
+	streamsKey := c.buildStreamsKey()
+	if len(streamsKey) == 0 {
 		return []*contracts.CMessage{}, nil
 	}
-	streamsKey := c.buildStreamsKey()
 	c.logger.Debug().Msgf("Consumer reading new messages from streams %v", streamsKey)
 	count := math.Round(float64(c.batchSize) / float64(len(c.segmentMap)))
 	if count == 0 {
@@ -311,4 +312,11 @@ func (c *Consumer) checkConsumerGroup(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (c *Consumer) isActive() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logger.Debug().Msgf("Get Messages")
+	return c.active
 }

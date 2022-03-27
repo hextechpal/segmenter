@@ -112,7 +112,7 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
-		stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.logger)
+		stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
 		s.streams[stream.GetName()] = stream
 		return stream, nil
 	}
@@ -124,6 +124,8 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 		Pcount: pcount,
 		Psize:  psize,
 		Logger: s.logger,
+		Store:  s.store,
+		Locker: s.locker,
 	})
 	err = s.saveStream(ctx, name, stream)
 	if err != nil {
@@ -146,7 +148,7 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*core.Stream, 
 	if streamDTO == nil {
 		return nil, nil
 	}
-	stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.logger)
+	stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
 	s.streams[name] = stream
 	return stream, nil
 }
@@ -167,7 +169,7 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*core.Stre
 }
 
 func (s *Segmenter) saveStream(ctx context.Context, name string, stream *core.Stream) error {
-	lock, err := s.locker.Acquire(ctx, core.StreamAdmin(s.ns, name), 100*time.Millisecond, "")
+	lock, err := s.locker.Acquire(ctx, s.streamAdmin(s.ns, name), 100*time.Millisecond, "")
 	if err != nil {
 		return err
 	}
@@ -181,5 +183,9 @@ func (s *Segmenter) saveStream(ctx context.Context, name string, stream *core.St
 }
 
 func (s *Segmenter) streamStorageKey(name string) string {
-	return fmt.Sprintf("__%s:__strm:%s", s.ns, name)
+	return fmt.Sprintf("__%s:%s:info", s.ns, name)
+}
+
+func (s *Segmenter) streamAdmin(ns string, stream string) string {
+	return fmt.Sprintf("__%s:%s:admin", ns, stream)
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
@@ -24,7 +25,7 @@ func newSegment(ctx context.Context, c *Consumer, partition Partition) (*segment
 	logger := c.logger.With().Int("Partition", int(partition)).Logger()
 	sg := &segment{partition: partition, c: c, shutDown: make(chan bool), logger: &logger}
 
-	lock, err := c.s.locker.Acquire(ctx, sg.partitionedStream(), lockDuration, c.id)
+	lock, err := c.s.locker.Acquire(ctx, sg.partitionLockKey(), lockDuration, c.id)
 	if err != nil {
 		logger.Error().Msgf("Failed to Acquire lock with key %s, %v", c.GetStreamName(), err)
 		return nil, err
@@ -57,7 +58,7 @@ func (sg *segment) refreshLock() {
 
 func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse) {
 	pending, err := sg.c.s.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
-		Stream: sg.partitionedStream(),
+		Stream: PartitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:  sg.c.group,
 		Idle:   sg.c.maxProcessingTime,
 		Start:  "-",
@@ -99,7 +100,7 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 
 func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids []string) {
 	result, err := sg.c.s.rdb.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   sg.partitionedStream(),
+		Stream:   PartitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:    sg.c.group,
 		Consumer: sg.c.id,
 		Messages: ids,
@@ -131,14 +132,10 @@ func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids
 	}
 }
 
-func (sg *segment) partitionedStream() string {
-	return PartitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition)
+func (sg *segment) partitionLockKey() string {
+	return fmt.Sprintf("__%s:__%s_%s:strm_%d", sg.c.s.ns, sg.c.s.name, sg.c.group, sg.partition)
 }
 
 func (sg *segment) ShutDown() {
 	sg.shutDown <- true
-}
-
-func (sg *segment) Ack(ctx context.Context, cmessage *contracts.CMessage) error {
-	return sg.c.s.rdb.XAck(ctx, sg.partitionedStream(), sg.c.group, cmessage.Id).Err()
 }
