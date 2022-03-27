@@ -8,7 +8,6 @@ the messages belonging to single segment is processed in order on a single consu
 ### Usage
 Check out the tests package to see how it works. 
 
-
 ### Things to do
 
 - [ ] Add more tests 
