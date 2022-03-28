@@ -7,10 +7,10 @@ Package segmenter implements partition over redis streams
 
 Redis streams are great, fast and easy to use. But sometimes we want to ensure ordering in processing of messages
 This library guarantees that all the messages based on a partition key are processed in order on a single consumer
-It also allows automatic re-balancing i.e. if a consumer is added/removed(dies) then the partitions are rebalanced
+It also allows does re-balancing i.e. if a consumer is added/removed(dies) then the partitions are rebalanced
 and the ordering property is followed
 
-### Segmenter
+## Segmenter
 
 This is how the segmenter is initialized. Namespace is the logical container for segmenter.
 You can initialize multiple segmenter in same app with different namespaces or in diff apps with same namespaces
@@ -25,10 +25,13 @@ c := segmenter.Config{
 s, err := segmenter.NewSegmenter(&c)
 ```
 
-### Stream
+## Stream
 
-Stream can be registered by any other app as well given the segmenter namespace and redis backend is same.
-This enable some of your apps to just act as producer while some to just act as consumers.
+Stream can be registered with the segmenter by passing in the name, partitionCount and partitionSize.
+If multiple apps try to register the stream by same name they will be returned the stream object using the properties
+which created it first and the newer properties (partition count and size are ignored, library will throw an exception
+in next release if properties are modified).
+Also streams are immutable i.e once created you cannot update the partition size or count
 
 ```go
 //Register a stream with name segmenter, 2 partitions and partition size 150
@@ -51,10 +54,10 @@ for i := 0; i < 10; i++ {
 }
 ```
 
-### Consumer
+## Consumer
 
 Similar to the stream you can register the consumer using the segmenter. A stream should be registered with the
-segmenter before you register the consumer. if not you will get NonExistentStream error
+segmenter before you register the consumer. If not you will get ErrorNonExistentStream
 
 ```go
 // Here we are registering a consumer
@@ -71,17 +74,21 @@ if err != nil {
 Once you have the message you can ack the message so that it will be marked processed
 
 ```go
-err := c1.Ack(ctx, m)
+err := c.Ack(ctx, m)
 log.Printf("Consumer1 : registerConsumer() err = %v", err)
 ```
 
-You can shut down the consumer using the sutDown method. This will cause the partitions to rebalance
+You can shut down the consumer using the ShutDown method. This will cause the partitions to rebalance
 
 ```go
-err = c2.ShutDown()
+err = c.ShutDown()
 if err != nil {
-	log.Fatalf("Error happened while shutting down c2, %v", err)
+	log.Fatalf("Error happened while shutting down c, %v", err)
 }
 ```
 
-For more details you can check out the tests/e2e package. It contains end-to-end tests which explains these in more detail
+For more details you can check out the tests/e2e package. It contains end-to-end test which explains these concepts
+in more detail
+
+---
+Readme created from Go doc with [goreadme](https://github.com/posener/goreadme)
