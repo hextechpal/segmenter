@@ -1,9 +1,10 @@
-package core
+package segmenter
 
 import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/rs/zerolog"
 	"time"
@@ -13,15 +14,15 @@ const lockDuration = 10 * time.Second
 
 type segment struct {
 	c         *Consumer
-	partition Partition
+	partition partition
 	lock      locker.Lock
 	shutDown  chan bool
 
 	logger *zerolog.Logger
 }
 
-func newSegment(ctx context.Context, c *Consumer, partition Partition) (*segment, error) {
-	logger := c.logger.With().Int("Partition", int(partition)).Logger()
+func newSegment(ctx context.Context, c *Consumer, partition partition) (*segment, error) {
+	logger := c.logger.With().Int("partition", int(partition)).Logger()
 	sg := &segment{partition: partition, c: c, shutDown: make(chan bool), logger: &logger}
 
 	lock, err := c.s.locker.Acquire(ctx, sg.partitionLockKey(), lockDuration, c.id)
@@ -41,7 +42,7 @@ func (sg *segment) refreshLock() {
 		case <-sg.shutDown:
 			err := sg.lock.Release(ctx)
 			if err != nil {
-				sg.logger.Debug().Err(err).Msgf("Releasing lock with key stream %s, Partition %d", sg.c.GetStreamName(), sg.partition)
+				sg.logger.Debug().Err(err).Msgf("Releasing lock with key stream %s, partition %d", sg.c.GetStreamName(), sg.partition)
 			}
 			return
 		default:
@@ -57,7 +58,7 @@ func (sg *segment) refreshLock() {
 
 func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse) {
 	pending, err := sg.c.s.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
-		Stream: partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
+		Stream: core.partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:  sg.c.group,
 		Idle:   sg.c.maxProcessingTime,
 		Start:  "-",
@@ -90,7 +91,7 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 
 func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids []string) {
 	result, err := sg.c.s.rdb.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
+		Stream:   core.partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:    sg.c.group,
 		Consumer: sg.c.id,
 		Messages: ids,

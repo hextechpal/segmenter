@@ -1,4 +1,4 @@
-package core
+package segmenter
 
 import (
 	"context"
@@ -21,15 +21,15 @@ const maintenanceLoopInterval = 500 * time.Millisecond
 const controlStreamSize = 256
 const controlLoopInterval = 100 * time.Millisecond
 
-type StreamDTO struct {
+type streamDTO struct {
 	Ns     string `json:"Ns"`
 	Name   string `json:"Name"`
 	Pcount int    `json:"Pcount"`
 	Psize  int64  `json:"Psize"`
 }
 
-func NewStreamDTO(s *Stream) *StreamDTO {
-	return &StreamDTO{
+func newStreamDTO(s *Stream) *streamDTO {
+	return &streamDTO{
 		Ns:     s.ns,
 		Name:   s.name,
 		Pcount: s.pcount,
@@ -52,7 +52,7 @@ type Stream struct {
 	logger *zerolog.Logger
 }
 
-type NewStreamArgs struct {
+type newStreamArgs struct {
 	Rdb    *redis.Client
 	Ns     string
 	Name   string
@@ -63,7 +63,7 @@ type NewStreamArgs struct {
 	Locker locker.Locker
 }
 
-func NewStream(_ context.Context, args *NewStreamArgs) *Stream {
+func newStream(_ context.Context, args *newStreamArgs) *Stream {
 	nLogger := args.Logger.With().Str("stream", args.Name).Int("Pcount", args.Pcount).Logger()
 	s := &Stream{
 		rdb:       args.Rdb,
@@ -80,8 +80,8 @@ func NewStream(_ context.Context, args *NewStreamArgs) *Stream {
 	return s
 }
 
-func NewStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *StreamDTO, s store.Store, l locker.Locker, logger *zerolog.Logger) *Stream {
-	return NewStream(ctx, &NewStreamArgs{
+func newStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *streamDTO, s store.Store, l locker.Locker, logger *zerolog.Logger) *Stream {
+	return newStream(ctx, &newStreamArgs{
 		Rdb:    rdb,
 		Ns:     dto.Ns,
 		Name:   dto.Name,
@@ -124,8 +124,8 @@ func (s *Stream) GetPartitionCount() int {
 	return s.pcount
 }
 
-func (s *Stream) getPartitionFromKey(partitionKey string) Partition {
-	return Partition(int(utils.Hash(partitionKey)) % s.pcount)
+func (s *Stream) getPartitionFromKey(partitionKey string) partition {
+	return partition(int(utils.Hash(partitionKey)) % s.pcount)
 }
 
 func (s *Stream) members(ctx context.Context, group string) (members, error) {
@@ -152,14 +152,14 @@ func (s *Stream) updateMembers(ctx context.Context, oldMembers members, group st
 
 func (s *Stream) computeMemberships(members members) members {
 	sort.Sort(members)
-	allPartitions := make([]Partition, s.pcount)
+	allPartitions := make([]partition, s.pcount)
 	for i := 0; i < s.pcount; i++ {
-		allPartitions[i] = Partition(i)
+		allPartitions[i] = partition(i)
 	}
 	partitionLen := int(math.Round(float64(s.pcount) / float64(members.Len())))
 	newMembers := make([]member, members.Len())
 	for i := 0; i < members.Len(); i++ {
-		var partitions Partitions
+		var partitions partitions
 		if i == members.Len()-1 {
 			partitions = allPartitions[i*partitionLen:]
 		} else {
@@ -325,7 +325,7 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 		}
 		var members members
 		_ = json.Unmarshal([]byte(data), &members)
-		s.logger.Debug().Msgf("Control Loop: Received Control Messages Members: %v", members)
+		s.logger.Debug().Msgf("Control Loop: Received Control Messages members: %v", members)
 		// We are requesting results from only one s so getting 0th result by default
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -334,7 +334,7 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 				if c, ok := cmap[m.ID]; ok {
 					c.logger.Debug().Msg("Starting to rebalance consumer")
 					// TODO: Handle Error, not sure right now what to do on repartitioning error
-					go func(pts Partitions) {
+					go func(pts partitions) {
 						err := c.rePartition(ctx, pts)
 						if err != nil {
 							c.logger.Error().Msgf("Error happened while repartitioning consumer, %v", err)
@@ -348,10 +348,10 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 	}
 }
 
-func (s *Stream) RegisterConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
+func (s *Stream) registerConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, err := NewConsumer(ctx, &newConsumerArgs{
+	c, err := newConsumer(ctx, &newConsumerArgs{
 		Stream:            s,
 		Group:             group,
 		BatchSize:         batchSize,

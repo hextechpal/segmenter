@@ -38,14 +38,14 @@ func TestGetMessages(t *testing.T) {
 	// a consumer dies, then after re-balancing partitions. the messages will be delivered to new consumers
 	c1, err := seg.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
 	if err != nil {
-		t.Fatalf("Consumer1 : RegisterConsumer() err = %v", err)
+		t.Fatalf("Consumer1 : registerConsumer() err = %v", err)
 	}
 	t.Logf("Consumer1 Registered id: %s", c1.GetID())
 
 	// Register One more consumer
 	c2, err := seg.RegisterConsumer(ctx, streamName, "group1", 10, time.Second)
 	if err != nil {
-		t.Fatalf("Consumer2 : RegisterConsumer() err = %v", err)
+		t.Fatalf("Consumer2 : registerConsumer() err = %v", err)
 	}
 	t.Logf("Consumer1 Registered id: %s", c2.GetID())
 
@@ -70,7 +70,7 @@ func TestGetMessages(t *testing.T) {
 	// data : []byte the data of the message
 	c1m, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
-		t.Fatalf("Consumer1 : Read() err = %v", err)
+		t.Fatalf("Consumer1 : read() err = %v", err)
 	}
 	t.Logf("Comsumer1 : Claimed %d messages Messages : %v", len(c1m), c1m)
 

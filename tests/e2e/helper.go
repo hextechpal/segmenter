@@ -6,7 +6,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter"
 	"github.com/hextechpal/segmenter/api/proto/contracts"
-	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"math/rand"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ const (
 )
 
 type spawnInfo struct {
-	c   *core.Consumer
+	c   *segmenter.Consumer
 	ch  chan []string
 	ack bool
 }
@@ -50,7 +49,7 @@ func createSegmenter(t *testing.T) *segmenter.Segmenter {
 	return s
 }
 
-func sendMessages(t *testing.T, st *core.Stream, count int) {
+func sendMessages(t *testing.T, st *segmenter.Stream, count int) {
 	t.Helper()
 	for i := 0; i < count; i++ {
 		uuid := fmt.Sprintf("uuid_%d", rand.Intn(1000))
@@ -83,16 +82,16 @@ func registerConsumer(t *testing.T, ctx context.Context, seg *segmenter.Segmente
 	}
 }
 
-func Read(t *testing.T, ctx context.Context, c *core.Consumer, ch chan []string, ack bool) {
+func read(t *testing.T, ctx context.Context, c *segmenter.Consumer, ch chan []string, ack bool) {
 	t.Helper()
 	for {
 		msgs, err := c.Read(ctx, 100*time.Millisecond)
 		if err != nil {
-			if err == core.ConsumerDeadError {
+			if err == segmenter.ConsumerDeadError {
 				t.Logf("[%s] Consumer Dead, Returning", c.GetID())
 				return
 			}
-			t.Fatalf("[%s] Read(), err = %s", c.GetID(), err)
+			t.Fatalf("[%s] read(), err = %s", c.GetID(), err)
 		}
 		//t.Logf(" [%d] Messages received from [%s]", len(msgs), c.GetID())
 		if len(msgs) > 0 {

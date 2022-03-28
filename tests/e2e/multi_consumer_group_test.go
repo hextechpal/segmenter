@@ -35,7 +35,7 @@ func TestMultiConsumerGroups(t *testing.T) {
 	// Spawn go routines which makes these consumers read from the stream
 	// There routines return the read messages via channels
 	for _, sp := range []spawnInfo{sp11, sp12, sp21, sp22} {
-		go Read(t, ctx, sp.c, sp.ch, sp.ack)
+		go read(t, ctx, sp.c, sp.ch, sp.ack)
 	}
 
 	// Just Sleeping 500ms here so that re-balancing should reach steady state

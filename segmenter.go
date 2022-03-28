@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
@@ -24,7 +23,7 @@ var InvalidPartitionSize = errors.New("partition size cannot less than 1")
 type Segmenter struct {
 	mu      sync.Mutex
 	rdb     *redis.Client
-	streams map[string]*core.Stream
+	streams map[string]*Stream
 	logger  *zerolog.Logger
 	store   store.Store
 	locker  locker.Locker
@@ -40,7 +39,7 @@ func NewSegmenter(c *Config) (*Segmenter, error) {
 	}
 	s := &Segmenter{
 		rdb:     rdb,
-		streams: make(map[string]*core.Stream),
+		streams: make(map[string]*Stream),
 		logger:  setupLogger(c.Debug, c.NameSpace),
 		store:   store.NewRedisStore(rdb),
 		locker:  locker.NewRedisLocker(rdb),
@@ -60,7 +59,7 @@ func setupLogger(debug bool, space string) *zerolog.Logger {
 	return &logger
 }
 
-func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*core.Consumer, error) {
+func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 
 	if name == "" {
 		return nil, EmptyStreamName
@@ -82,10 +81,10 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 	}
 
 	s.logger.Debug().Msgf("registering new consumer for stream %s", stream.GetName())
-	return stream.RegisterConsumer(ctx, group, batchSize, maxProcessingTime)
+	return stream.registerConsumer(ctx, group, batchSize, maxProcessingTime)
 }
 
-func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*core.Stream, error) {
+func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
 	if name == "" {
 		return nil, EmptyStreamName
 	}
@@ -112,12 +111,12 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
-		stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
+		stream = newStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
 		s.streams[stream.GetName()] = stream
 		return stream, nil
 	}
 
-	stream = core.NewStream(ctx, &core.NewStreamArgs{
+	stream = newStream(ctx, &newStreamArgs{
 		Rdb:    s.rdb,
 		Ns:     s.ns,
 		Name:   name,
@@ -135,7 +134,7 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 	return stream, nil
 }
 
-func (s *Segmenter) findStream(ctx context.Context, name string) (*core.Stream, error) {
+func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error) {
 	stream, ok := s.streams[name]
 	if ok {
 		return stream, nil
@@ -148,13 +147,13 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*core.Stream, 
 	if streamDTO == nil {
 		return nil, nil
 	}
-	stream = core.NewStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
+	stream = newStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
 	s.streams[name] = stream
 	return stream, nil
 }
 
-func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*core.StreamDTO, error) {
-	var st core.StreamDTO
+func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO, error) {
+	var st streamDTO
 	err := s.store.GetKey(ctx, s.streamStorageKey(name), &st)
 	if err == redis.Nil {
 		return nil, nil
@@ -167,13 +166,13 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*core.Stre
 	return &st, nil
 }
 
-func (s *Segmenter) saveStream(ctx context.Context, name string, stream *core.Stream) error {
+func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
 	lock, err := s.locker.Acquire(ctx, s.streamAdmin(s.ns, name), 100*time.Millisecond, "")
 	if err != nil {
 		return err
 	}
 	defer lock.Release(ctx)
-	streamDTO := core.NewStreamDTO(stream)
+	streamDTO := newStreamDTO(stream)
 
 	return s.store.SetKey(ctx, s.streamStorageKey(name), streamDTO)
 }

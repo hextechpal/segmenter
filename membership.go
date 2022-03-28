@@ -1,19 +1,19 @@
-package core
+package segmenter
 
-type Reason string
+type reason string
 
-const join Reason = "join"
-const leave Reason = "leave"
+const join reason = "join"
+const leave reason = "leave"
 
 type member struct {
 	ID         string     `json:"consumerId"`
 	JoinedAt   int64      `json:"joinedAt"`
-	Partitions Partitions `json:"Partitions"`
+	Partitions partitions `json:"partitions"`
 	Group      string     `json:"group"`
 }
 
 type memberChangeInfo struct {
-	Reason     Reason `json:"reason"`
+	Reason     reason `json:"reason"`
 	ConsumerId string `json:"consumerId"`
 	Group      string `json:"group"`
 	Ts         int64  `json:"ts"`

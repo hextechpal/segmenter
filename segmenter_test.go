@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
-	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
@@ -26,7 +25,7 @@ func TestSegmenter_RegisterConsumer(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *core.Consumer
+		want    *Consumer
 		wantErr bool
 	}{
 		{
@@ -84,11 +83,11 @@ func TestSegmenter_RegisterConsumer(t *testing.T) {
 			s := createSegmenter(t, rdb)
 			got, err := s.RegisterConsumer(tt.args.ctx, tt.args.name, tt.args.group, tt.args.batchSize, tt.args.maxProcessingTime)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("RegisterConsumer() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("registerConsumer() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("RegisterConsumer() got = %v, want %v", got, tt.want)
+				t.Errorf("registerConsumer() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -105,7 +104,7 @@ func TestSegmenter_RegisterStream(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *core.Stream
+		want    *Stream
 		wantErr bool
 	}{
 		{
@@ -148,11 +147,11 @@ func TestSegmenter_RegisterStream(t *testing.T) {
 			s := createSegmenter(t, rdb)
 			got, err := s.RegisterStream(tt.args.ctx, tt.args.name, tt.args.pcount, tt.args.psize)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("RegisterConsumer() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("registerConsumer() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("RegisterConsumer() got = %v, want %v", got, tt.want)
+				t.Errorf("registerConsumer() got = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -163,7 +162,7 @@ func createSegmenter(t *testing.T, rdb *redis.Client) *Segmenter {
 	l := zerolog.New(os.Stderr).With().Logger()
 	return &Segmenter{
 		rdb:     rdb,
-		streams: make(map[string]*core.Stream),
+		streams: make(map[string]*Stream),
 		logger:  &l,
 		store:   store.NewRedisStore(rdb),
 		locker:  locker.NewRedisLocker(rdb),

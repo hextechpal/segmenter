@@ -21,7 +21,7 @@ func TestMultiConsumer(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	for _, sp := range []spawnInfo{sp1, sp2} {
-		go Read(t, ctx, sp.c, sp.ch, sp.ack)
+		go read(t, ctx, sp.c, sp.ch, sp.ack)
 	}
 
 	msgCount := 1000

@@ -39,7 +39,7 @@ func testForStream(t *testing.T, streamName, group string, seg *segmenter.Segmen
 	time.Sleep(time.Second)
 
 	for _, sp := range []spawnInfo{sp1, sp2} {
-		go Read(t, ctx, sp.c, sp.ch, sp.ack)
+		go read(t, ctx, sp.c, sp.ch, sp.ack)
 	}
 
 	msgCount := 1000

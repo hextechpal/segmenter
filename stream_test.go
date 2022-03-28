@@ -1,4 +1,4 @@
-package core
+package segmenter
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
+	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
@@ -35,15 +36,15 @@ func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name strin
 
 func setupMembers(t *testing.T, pc int, ns, sName, group string, mCount int) members {
 	t.Helper()
-	allPartitions := make([]Partition, pc)
+	allPartitions := make([]partition, pc)
 	allMembers := make([]member, mCount)
 
 	for i := 0; i < pc; i++ {
-		allPartitions[i] = Partition(i)
+		allPartitions[i] = partition(i)
 	}
 	ppm := pc / mCount
 	for i := 0; i < mCount; i++ {
-		var p Partitions
+		var p partitions
 		if i == mCount-1 {
 			p = allPartitions[i*ppm:]
 		} else {
@@ -72,7 +73,7 @@ func TestStream_computeMemberships(t *testing.T) {
 		want members
 	}{
 		{
-			name: "2 members - 4 Partitions",
+			name: "2 members - 4 partitions",
 			pc:   4,
 			args: args{
 				members: []member{
@@ -92,19 +93,19 @@ func TestStream_computeMemberships(t *testing.T) {
 				{
 					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(0), Partition(1)},
+					Partitions: []partition{partition(0), partition(1)},
 					Group:      "group1",
 				},
 				{
 					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(2), Partition(3)},
+					Partitions: []partition{partition(2), partition(3)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "2 members - 3 Partitions",
+			name: "2 members - 3 partitions",
 			pc:   3,
 			args: args{
 				members: []member{
@@ -124,19 +125,19 @@ func TestStream_computeMemberships(t *testing.T) {
 				{
 					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(0), Partition(1)},
+					Partitions: []partition{partition(0), partition(1)},
 					Group:      "group1",
 				},
 				{
 					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(2)},
+					Partitions: []partition{partition(2)},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "2 members - 1 Partitions",
+			name: "2 members - 1 partitions",
 			pc:   1,
 			args: args{
 				members: []member{
@@ -156,19 +157,19 @@ func TestStream_computeMemberships(t *testing.T) {
 				{
 					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(0)},
+					Partitions: []partition{partition(0)},
 					Group:      "group1",
 				},
 				{
 					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{},
+					Partitions: []partition{},
 					Group:      "group1",
 				},
 			},
 		},
 		{
-			name: "3 members - 10 Partitions",
+			name: "3 members - 10 partitions",
 			pc:   10,
 			args: args{
 				members: []member{
@@ -193,19 +194,19 @@ func TestStream_computeMemberships(t *testing.T) {
 				{
 					ID:         "consumer1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(0), Partition(1), Partition(2)},
+					Partitions: []partition{partition(0), partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ID:         "consumer2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4), Partition(5)},
+					Partitions: []partition{partition(3), partition(4), partition(5)},
 					Group:      "group1",
 				},
 				{
 					ID:         "consumer3",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(6), Partition(7), Partition(8), Partition(9)},
+					Partitions: []partition{partition(6), partition(7), partition(8), partition(9)},
 					Group:      "group1",
 				},
 			},
@@ -278,7 +279,7 @@ func TestStream_calculateDeadMembers(t *testing.T) {
 			want: []member{},
 		},
 		{
-			name:  "One Member dead",
+			name:  "One member dead",
 			alive: []int{0, 1},
 			args: args{
 				ctx:     context.Background(),
@@ -434,12 +435,12 @@ func TestStream_computeMembers(t *testing.T) {
 		want2           bool
 	}{
 		{
-			name:            "Member Added",
+			name:            "member Added",
 			originalMembers: []member{},
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     join,
+					Reason:     core.join,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -454,7 +455,7 @@ func TestStream_computeMembers(t *testing.T) {
 			},
 		},
 		{
-			name: "Member Added - Already present",
+			name: "member Added - Already present",
 			originalMembers: []member{
 				{
 					ID:       "consumer1",
@@ -465,7 +466,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     join,
+					Reason:     core.join,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -476,7 +477,7 @@ func TestStream_computeMembers(t *testing.T) {
 			want2: true,
 		},
 		{
-			name: "Member Leave",
+			name: "member leave",
 			originalMembers: []member{
 				{
 					ID:       "consumer1",
@@ -487,7 +488,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     leave,
+					Reason:     core.leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -498,7 +499,7 @@ func TestStream_computeMembers(t *testing.T) {
 			want2: false,
 		},
 		{
-			name: "Member Absent",
+			name: "member Absent",
 			originalMembers: []member{
 				{
 					ID:       "consumer2",
@@ -509,7 +510,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     leave,
+					Reason:     core.leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -520,7 +521,7 @@ func TestStream_computeMembers(t *testing.T) {
 			want2: true,
 		},
 		{
-			name:    "Members with error",
+			name:    "members with error",
 			mockErr: errors.New("members query error"),
 			originalMembers: []member{
 				{
@@ -532,7 +533,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     leave,
+					Reason:     core.leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -578,7 +579,7 @@ func TestNewStreamFromDTO(t *testing.T) {
 	locker := locker.NewRedisLocker(rdb)
 	type args struct {
 		ctx context.Context
-		dto *StreamDTO
+		dto *streamDTO
 	}
 	tests := []struct {
 		name string
@@ -588,7 +589,7 @@ func TestNewStreamFromDTO(t *testing.T) {
 			name: "Test Stream from DTO",
 			args: args{
 				ctx: context.Background(),
-				dto: &StreamDTO{
+				dto: &streamDTO{
 					Ns:     "ns",
 					Name:   "test1",
 					Pcount: 10,
@@ -599,17 +600,17 @@ func TestNewStreamFromDTO(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewStreamFromDTO(tt.args.ctx, rdb, tt.args.dto, store, locker, &logger)
+			got := newStreamFromDTO(tt.args.ctx, rdb, tt.args.dto, store, locker, &logger)
 			if got.GetName() != tt.args.dto.Name {
-				t.Errorf("NewStreamFromDTO() name = %v, want %v", got.GetName(), tt.args.dto.Name)
+				t.Errorf("newStreamFromDTO() name = %v, want %v", got.GetName(), tt.args.dto.Name)
 			}
 
 			if got.GetPartitionCount() != tt.args.dto.Pcount {
-				t.Errorf("NewStreamFromDTO() pcount = %v, want %v", got.GetPartitionCount(), tt.args.dto.Pcount)
+				t.Errorf("newStreamFromDTO() pcount = %v, want %v", got.GetPartitionCount(), tt.args.dto.Pcount)
 			}
 
 			if got.GetPartitionSize() != tt.args.dto.Psize {
-				t.Errorf("NewStreamFromDTO() psize = %v, want %v", got.GetPartitionSize(), tt.args.dto.Psize)
+				t.Errorf("newStreamFromDTO() psize = %v, want %v", got.GetPartitionSize(), tt.args.dto.Psize)
 			}
 		})
 	}

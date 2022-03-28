@@ -1,4 +1,4 @@
-package core
+package segmenter
 
 import (
 	"reflect"
@@ -23,7 +23,7 @@ func TestMembers_Add(t *testing.T) {
 				member: member{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -31,7 +31,7 @@ func TestMembers_Add(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -62,7 +62,7 @@ func TestMembers_Contains(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -75,7 +75,7 @@ func TestMembers_Contains(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -114,13 +114,13 @@ func TestMembers_RemoveAll(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ID:         "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
@@ -129,13 +129,13 @@ func TestMembers_RemoveAll(t *testing.T) {
 					{
 						ID:         "cid1",
 						JoinedAt:   time.Now().UnixMilli(),
-						Partitions: []Partition{Partition(1), Partition(2)},
+						Partitions: []partition{partition(1), partition(2)},
 						Group:      "group1",
 					},
 					{
 						ID:         "cid2",
 						JoinedAt:   time.Now().UnixMilli(),
-						Partitions: []Partition{Partition(3), Partition(4)},
+						Partitions: []partition{partition(3), partition(4)},
 						Group:      "group1",
 					},
 				},
@@ -168,13 +168,13 @@ func TestMembers_Remove(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ID:         "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
@@ -183,7 +183,7 @@ func TestMembers_Remove(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 			},
@@ -200,13 +200,13 @@ func TestMembers_Remove(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ID:         "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},
@@ -215,13 +215,13 @@ func TestMembers_Remove(t *testing.T) {
 				{
 					ID:         "cid1",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(1), Partition(2)},
+					Partitions: []partition{partition(1), partition(2)},
 					Group:      "group1",
 				},
 				{
 					ID:         "cid2",
 					JoinedAt:   time.Now().UnixMilli(),
-					Partitions: []Partition{Partition(3), Partition(4)},
+					Partitions: []partition{partition(3), partition(4)},
 					Group:      "group1",
 				},
 			},

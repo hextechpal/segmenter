@@ -1,4 +1,4 @@
-package core
+package segmenter
 
 import (
 	"context"
@@ -16,6 +16,8 @@ const heartBeatDuration = 2 * time.Second
 
 var ConsumerDeadError = errors.New("consumer shut down")
 
+// Consumer : This is a segmenter consumer. When you register a consumer with segmenter you get an instance of the consumer.
+// This will we used to read/ack messages in the stream
 type Consumer struct {
 	mu     sync.Mutex
 	s      *Stream
@@ -26,7 +28,7 @@ type Consumer struct {
 	group             string
 	maxProcessingTime time.Duration
 
-	segmentMap map[Partition]*segment
+	segmentMap map[partition]*segment
 	shutDown   chan bool
 	active     bool
 }
@@ -39,9 +41,7 @@ type newConsumerArgs struct {
 	Logger            *zerolog.Logger
 }
 
-// Public Functions
-
-func NewConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) {
+func newConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) {
 	id := utils.GenerateUuid()
 	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Int64("bsize", args.BatchSize).Logger()
 	c := &Consumer{
@@ -53,7 +53,7 @@ func NewConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) 
 		group:             args.Group,
 		maxProcessingTime: args.MaxProcessingTime,
 
-		segmentMap: make(map[Partition]*segment),
+		segmentMap: make(map[partition]*segment),
 		active:     true,
 		shutDown:   make(chan bool),
 	}
@@ -66,8 +66,10 @@ func NewConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) 
 	return c, nil
 }
 
+// Read : Reads rom the stream this consumer is registered with. It will only read from the partitions
+// assigned to the consumer.
 func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*contracts.CMessage, error) {
-	if !c.isActive() {
+	if !c.IsActive() {
 		return nil, ConsumerDeadError
 	}
 
@@ -83,8 +85,9 @@ func (c *Consumer) Read(ctx context.Context, maxWaitDuration time.Duration) ([]*
 	return claimed, nil
 }
 
+// Ack : Acknowledge messages in the redis stream
 func (c *Consumer) Ack(ctx context.Context, cmessage *contracts.CMessage) error {
-	if !c.isActive() {
+	if !c.IsActive() {
 		return ConsumerDeadError
 	}
 	p := c.s.getPartitionFromKey(cmessage.PartitionKey)
@@ -92,6 +95,9 @@ func (c *Consumer) Ack(ctx context.Context, cmessage *contracts.CMessage) error 
 	return c.s.rdb.XAck(ctx, stream, c.group, cmessage.Id).Err()
 }
 
+// ShutDown : This will shut down the consumer. You will no longer be able to read or ack messages via this consumer.
+// As an effect of this the partitions which were assigned to this consumer will be rebalanced and assigned to other
+// consumers in the group
 func (c *Consumer) ShutDown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -102,46 +108,50 @@ func (c *Consumer) ShutDown() error {
 	return nil
 }
 
+// GetID : Returns the unique id assigned to the consumer
 func (c *Consumer) GetID() string {
 	return c.id
 }
 
+// GetStreamName : Returns the name of the stream against which this consumer is registered
 func (c *Consumer) GetStreamName() string {
 	return c.s.name
 }
 
+// GetNameSpace : Returns the name space of registered consumer. This will always be the same as the namespace of the
+// stream
 func (c *Consumer) GetNameSpace() string {
 	return c.s.ns
 }
 
-func (c *Consumer) rePartition(ctx context.Context, partitions Partitions) error {
+func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.logger.Debug().Msgf("Re Partitioning started, Partitions %v", partitions)
-	toBeReleased := make([]Partition, 0)
+	c.logger.Debug().Msgf("Re Partitioning started, partitions %v", partitions)
+	toBeReleased := make([]partition, 0)
 	for p := range c.segmentMap {
 		if !partitions.Contains(p) {
 			toBeReleased = append(toBeReleased, p)
 		}
 	}
-	c.logger.Debug().Msgf("Need to Shutdown Partitions : %v", toBeReleased)
+	c.logger.Debug().Msgf("Need to Shutdown partitions : %v", toBeReleased)
 
 	for _, p := range toBeReleased {
 		c.segmentMap[p].ShutDown()
 		delete(c.segmentMap, p)
 	}
 
-	c.logger.Debug().Msgf("Partitions shut down Successfully : %v", toBeReleased)
+	c.logger.Debug().Msgf("partitions shut down Successfully : %v", toBeReleased)
 
 	for _, p := range partitions {
 		if _, ok := c.segmentMap[p]; !ok {
-			c.logger.Debug().Msgf("Creating segment for Partition : %v", p)
+			c.logger.Debug().Msgf("Creating segment for partition : %v", p)
 			sg, err := newSegment(ctx, c, p)
 			if err != nil {
 				return err
 			}
 			c.segmentMap[p] = sg
-			c.logger.Debug().Msgf("Created segment for Partition : %v", p)
+			c.logger.Debug().Msgf("Created segment for partition : %v", p)
 		}
 	}
 	c.logger.Debug().Msg("Re Partitioning  completed")
@@ -167,13 +177,13 @@ func (c *Consumer) buildStreamsKey() []string {
 
 type pendingResponse struct {
 	err        error
-	partition  Partition
+	partition  partition
 	messageIds []string
 }
 
-func (c *Consumer) getPendingEntries(ctx context.Context) map[Partition][]string {
+func (c *Consumer) getPendingEntries(ctx context.Context) map[partition][]string {
 	ch, pc := c.queuePending(ctx)
-	pending := make(map[Partition][]string)
+	pending := make(map[partition][]string)
 	for i := 0; i < pc; i++ {
 		pr := <-ch
 		if pr.err != nil {
@@ -229,11 +239,11 @@ func (c *Consumer) readNewMessages(ctx context.Context, maxWaitDuration time.Dur
 
 type claimResponse struct {
 	err       error
-	partition Partition
+	partition partition
 	messages  []*contracts.CMessage
 }
 
-func (c *Consumer) claimEntries(ctx context.Context, entries map[Partition][]string) []*contracts.CMessage {
+func (c *Consumer) claimEntries(ctx context.Context, entries map[partition][]string) []*contracts.CMessage {
 	messages := make([]*contracts.CMessage, 0)
 	ch := make(chan *claimResponse)
 	for partition, ids := range entries {
@@ -291,7 +301,7 @@ func (c *Consumer) beat() {
 
 func (c *Consumer) checkConsumerGroup(ctx context.Context) error {
 	for i := 0; i < c.s.pcount; i++ {
-		key := partitionedStream(c.s.ns, c.s.name, Partition(i))
+		key := partitionedStream(c.s.ns, c.s.name, partition(i))
 		err := c.s.rdb.XGroupCreateMkStream(ctx, key, c.group, "$").Err()
 		if err != nil {
 			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
@@ -304,7 +314,8 @@ func (c *Consumer) checkConsumerGroup(ctx context.Context) error {
 	return nil
 }
 
-func (c *Consumer) isActive() bool {
+// IsActive : Returns true if a consumer is active
+func (c *Consumer) IsActive() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.logger.Debug().Msgf("Get Messages")
