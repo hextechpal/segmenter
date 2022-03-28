@@ -21,8 +21,11 @@ You can initialize multiple segmenter in same app with different namespaces or i
 
 Stream
 
-Stream can be registered by any other app as well given the segmenter namespace and redis backend is same.
-This enable some of your apps to just act as producer while some to just act as consumers.
+Stream can be registered with the segmenter by passing in the name, partitionCount and partitionSize.
+If multiple apps try to register the stream by same name they will be returned the stream object using the properties
+which created it first and the newer properties (partition count and size are ignored, library will throw an exception
+in next release if properties are modified).
+Also streams are immutable i.e once created you cannot update the partition size or count
 
 	//Register a stream with name segmenter, 2 partitions and partition size 150
 	st, err := s.RegisterStream(ctx, "segmenter", 2, 250)
@@ -44,7 +47,7 @@ After registering you can use this stream to send messages
 Consumer
 
 Similar to the stream you can register the consumer using the segmenter. A stream should be registered with the
-segmenter before you register the consumer. if not you will get ErrorNonExistentStream error
+segmenter before you register the consumer. If not you will get ErrorNonExistentStream
 
 	// Here we are registering a consumer
 	// stream : "segmenter"
@@ -58,16 +61,17 @@ segmenter before you register the consumer. if not you will get ErrorNonExistent
 
 Once you have the message you can ack the message so that it will be marked processed
 
-	err := c1.Ack(ctx, m)
+	err := c.Ack(ctx, m)
 	log.Printf("Consumer1 : registerConsumer() err = %v", err)
 
-You can shut down the consumer using the sutDown method. This will cause the partitions to rebalance
+You can shut down the consumer using the ShutDown method. This will cause the partitions to rebalance
 
-	err = c2.ShutDown()
+	err = c.ShutDown()
 	if err != nil {
-		log.Fatalf("Error happened while shutting down c2, %v", err)
+		log.Fatalf("Error happened while shutting down c, %v", err)
 	}
 
-For more details you can check out the tests/e2e package. I contains end to end test which explains these in more detail
+For more details you can check out the tests/e2e package. It contains end-to-end test which explains these concepts
+in more detail
 */
 package segmenter

@@ -102,7 +102,7 @@ func (c *Consumer) ShutDown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, sg := range c.segmentMap {
-		sg.ShutDown()
+		sg.stop()
 	}
 	c.shutDown <- true
 	return nil
@@ -137,7 +137,7 @@ func (c *Consumer) rePartition(ctx context.Context, partitions partitions) error
 	c.logger.Debug().Msgf("Need to Shutdown partitions : %v", toBeReleased)
 
 	for _, p := range toBeReleased {
-		c.segmentMap[p].ShutDown()
+		c.segmentMap[p].stop()
 		delete(c.segmentMap, p)
 	}
 

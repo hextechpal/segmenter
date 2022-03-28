@@ -117,6 +117,6 @@ func (sg *segment) partitionLockKey() string {
 	return fmt.Sprintf("__%s:__%s_%s:strm_%d", sg.c.s.ns, sg.c.s.name, sg.c.group, sg.partition)
 }
 
-func (sg *segment) ShutDown() {
+func (sg *segment) stop() {
 	sg.shutDown <- true
 }
