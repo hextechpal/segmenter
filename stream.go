@@ -37,6 +37,8 @@ func newStreamDTO(s *Stream) *streamDTO {
 	}
 }
 
+// Stream : It represents a segmenter stream. You will use this to send messages to the stream.
+// It will route your messages to appropriate partition based on the paritionKey embedded in the message
 type Stream struct {
 	mu        sync.Mutex
 	rdb       *redis.Client
@@ -93,6 +95,7 @@ func newStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *streamDTO, s 
 	})
 }
 
+// Send : Send messages to the stream
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
 	data, _ := protojson.Marshal(m)
 	id, err := s.rdb.XAdd(ctx, &redis.XAddArgs{
@@ -112,14 +115,17 @@ func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error
 	return id, nil
 }
 
+// GetName : Returns the name off stream
 func (s *Stream) GetName() string {
 	return s.name
 }
 
+// GetPartitionSize : Returns the size of the partitions for the stream
 func (s *Stream) GetPartitionSize() int64 {
 	return s.psize
 }
 
+// GetPartitionCount : Returns partition count for the stream
 func (s *Stream) GetPartitionCount() int {
 	return s.pcount
 }
