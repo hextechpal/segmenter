@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// This test tries to showcase the consumer disconnect support
+// When a consumer is disconnected the alive consumer will take over the partition
+// It will also claim all the messages that the previous consumer had read and not yet acknowledged
+
 func TestGetMessages(t *testing.T) {
 	seg := createSegmenter(t)
 
@@ -120,6 +124,7 @@ func TestGetMessages(t *testing.T) {
 		}
 	}
 
+	// As all the messages are now read and acked there should be no messages in the stream
 	c1mFinal, err := c1.Read(ctx, 100*time.Millisecond)
 	if err != nil {
 		t.Fatalf("Error happened while reading messages from Consumer c1, %v", err)

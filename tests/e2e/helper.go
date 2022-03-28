@@ -28,6 +28,10 @@ type spawnInfo struct {
 
 var ctx = context.Background()
 
+func init() {
+	rand.Seed(time.Now().UnixMilli())
+}
+
 func createSegmenter(t *testing.T) *segmenter.Segmenter {
 	t.Helper()
 

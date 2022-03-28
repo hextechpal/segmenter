@@ -1,14 +1,9 @@
 package e2e
 
 import (
-	"math/rand"
 	"testing"
 	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixMilli())
-}
 
 func TestMultiConsumer(t *testing.T) {
 	streamName := "sgStream"

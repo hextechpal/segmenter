@@ -2,14 +2,12 @@ package e2e
 
 import (
 	"github.com/hextechpal/segmenter"
-	"math/rand"
 	"testing"
 	"time"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixMilli())
-}
+// This test attempts to showcase that segmenter can work with multiple streams
+// Each stream is independent
 
 func TestMultiStream(t *testing.T) {
 	seg := createSegmenter(t)
