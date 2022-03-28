@@ -25,12 +25,12 @@ func TestMultiConsumerGroups(t *testing.T) {
 	t.Logf("Stream Registered %s", st.GetName())
 
 	// Register consumers in consumer group1
-	sp11 := registerConsumer(t, ctx, seg, streamName, group1, ptime, true)
-	sp12 := registerConsumer(t, ctx, seg, streamName, group1, ptime, true)
+	sp11 := registerConsumer(ctx, t, seg, streamName, group1, ptime, true)
+	sp12 := registerConsumer(ctx, t, seg, streamName, group1, ptime, true)
 
 	// Register consumers in consumer group3
-	sp21 := registerConsumer(t, ctx, seg, streamName, group2, ptime, true)
-	sp22 := registerConsumer(t, ctx, seg, streamName, group2, ptime, true)
+	sp21 := registerConsumer(ctx, t, seg, streamName, group2, ptime, true)
+	sp22 := registerConsumer(ctx, t, seg, streamName, group2, ptime, true)
 
 	// Spawn go routines which makes these consumers read from the stream
 	// There routines return the read messages via channels

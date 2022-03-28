@@ -12,6 +12,7 @@ import (
 	"time"
 )
 
+// Segmenter : Struck exposed by the library to register streams and consumer
 type Segmenter struct {
 	mu      sync.Mutex
 	rdb     *redis.Client
@@ -51,42 +52,44 @@ func setupLogger(debug bool, space string) *zerolog.Logger {
 	return &logger
 }
 
+// RegisterConsumer : Registers a consumer with segmenter against a stream and group with given batchSize and processingTime
 func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 
 	if name == "" {
-		return nil, EmptyStreamName
+		return nil, ErrorEmptyStreamName
 	}
 
 	if group == "" {
-		return nil, EmptyGroupName
+		return nil, ErrorEmptyGroupName
 	}
 
 	if batchSize < 1 {
-		return nil, InvalidBatchSize
+		return nil, ErrorInvalidBatchSize
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stream, err := s.findStream(ctx, name)
 	if err != nil || stream == nil {
 		// TODO handle the case when stream do not exist
-		return nil, NonExistentStream
+		return nil, ErrorNonExistentStream
 	}
 
 	s.logger.Debug().Msgf("registering new consumer for stream %s", stream.GetName())
 	return stream.registerConsumer(ctx, group, batchSize, maxProcessingTime)
 }
 
+// RegisterStream : Registers a stream with segmenter with given partition count and partition size
 func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
 	if name == "" {
-		return nil, EmptyStreamName
+		return nil, ErrorEmptyStreamName
 	}
 
 	if pcount < 1 {
-		return nil, InvalidPartitionCount
+		return nil, ErrorInvalidPartitionCount
 	}
 
 	if psize < 1 {
-		return nil, InvalidPartitionSize
+		return nil, ErrorInvalidPartitionSize
 	}
 
 	s.mu.Lock()

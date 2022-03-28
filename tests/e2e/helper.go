@@ -69,7 +69,7 @@ func sendMessages(t *testing.T, st *segmenter.Stream, count int) {
 	}
 }
 
-func registerConsumer(t *testing.T, ctx context.Context, seg *segmenter.Segmenter, streamName string, group string, ptime time.Duration, ack bool) spawnInfo {
+func registerConsumer(ctx context.Context, t *testing.T, seg *segmenter.Segmenter, streamName string, group string, ptime time.Duration, ack bool) spawnInfo {
 	c1, err := seg.RegisterConsumer(ctx, streamName, group, batchSize, ptime)
 	if err != nil {
 		t.Fatalf("RegisterStream(), err = %s", err)

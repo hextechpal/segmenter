@@ -34,8 +34,8 @@ func testForStream(t *testing.T, streamName, group string, seg *segmenter.Segmen
 		t.Fatalf("RegisterStream(), err = %s", err)
 	}
 
-	sp1 := registerConsumer(t, ctx, seg, streamName, group, ptime, true)
-	sp2 := registerConsumer(t, ctx, seg, streamName, group, ptime, true)
+	sp1 := registerConsumer(ctx, t, seg, streamName, group, ptime, true)
+	sp2 := registerConsumer(ctx, t, seg, streamName, group, ptime, true)
 	time.Sleep(time.Second)
 
 	for _, sp := range []spawnInfo{sp1, sp2} {

@@ -6,21 +6,21 @@ import (
 	"time"
 )
 
-type RedisLock struct {
+type redisLock struct {
 	l *redislock.Lock
 }
 
-func (r *RedisLock) Release(ctx context.Context) error {
+func (r *redisLock) Release(ctx context.Context) error {
 	return r.l.Release(ctx)
 }
 
-func (r *RedisLock) Refresh(ctx context.Context, duration time.Duration) error {
+func (r *redisLock) Refresh(ctx context.Context, duration time.Duration) error {
 	opts := redislock.Options{
 		RetryStrategy: redislock.ExponentialBackoff(20*time.Millisecond, 100*time.Millisecond),
 	}
 	return r.l.Refresh(ctx, duration, &opts)
 }
 
-func (r *RedisLock) Key() string {
+func (r *redisLock) Key() string {
 	return r.l.Key()
 }

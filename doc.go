@@ -44,7 +44,7 @@ After registering you can use this stream to send messages
 Consumer
 
 Similar to the stream you can register the consumer using the segmenter. A stream should be registered with the
-segmenter before you register the consumer. if not you will get NonExistentStream error
+segmenter before you register the consumer. if not you will get ErrorNonExistentStream error
 
 	// Here we are registering a consumer
 	// stream : "segmenter"

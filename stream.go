@@ -263,7 +263,7 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) er
 		}
 	}(lock, ctx)
 
-	members, err, done := s.computeMembers(ctx, changeInfo)
+	members, done, err := s.computeMembers(ctx, changeInfo)
 	if err != nil {
 		return err
 	}
@@ -275,18 +275,18 @@ func (s *Stream) rebalance(ctx context.Context, changeInfo *memberChangeInfo) er
 	return s.updateMembers(ctx, members, changeInfo.Group)
 }
 
-func (s *Stream) computeMembers(ctx context.Context, changeInfo *memberChangeInfo) (members, error, bool) {
+func (s *Stream) computeMembers(ctx context.Context, changeInfo *memberChangeInfo) (members, bool, error) {
 	members, err := s.members(ctx, changeInfo.Group)
 	if err != nil {
-		return nil, err, true
+		return nil, true, err
 	}
 
 	if changeInfo.Reason == join && members.Contains(changeInfo.ConsumerId) {
-		return nil, nil, true
+		return nil, true, nil
 	}
 
 	if changeInfo.Reason == leave && !members.Contains(changeInfo.ConsumerId) {
-		return nil, nil, true
+		return nil, true, nil
 	}
 
 	// Add and sort members
@@ -300,7 +300,7 @@ func (s *Stream) computeMembers(ctx context.Context, changeInfo *memberChangeInf
 	} else {
 		members = members.Remove(newMember.ID)
 	}
-	return members, nil, false
+	return members, false, nil
 }
 
 func (s *Stream) controlLoop() {

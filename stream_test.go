@@ -430,8 +430,8 @@ func TestStream_computeMembers(t *testing.T) {
 		args            args
 		mockErr         error
 		want            members
-		want1           error
-		want2           bool
+		want1           bool
+		want2           error
 	}{
 		{
 			name:            "member Added",
@@ -472,8 +472,8 @@ func TestStream_computeMembers(t *testing.T) {
 				},
 			},
 			want:  nil,
-			want1: nil,
-			want2: true,
+			want2: nil,
+			want1: true,
 		},
 		{
 			name: "member leave",
@@ -494,8 +494,8 @@ func TestStream_computeMembers(t *testing.T) {
 				},
 			},
 			want:  []member{},
-			want1: nil,
-			want2: false,
+			want2: nil,
+			want1: false,
 		},
 		{
 			name: "member Absent",
@@ -516,8 +516,8 @@ func TestStream_computeMembers(t *testing.T) {
 				},
 			},
 			want:  nil,
-			want1: nil,
-			want2: true,
+			want2: nil,
+			want1: true,
 		},
 		{
 			name:    "members with error",
@@ -539,8 +539,8 @@ func TestStream_computeMembers(t *testing.T) {
 				},
 			},
 			want:  nil,
-			want1: errors.New("members query error"),
-			want2: true,
+			want1: true,
+			want2: errors.New("members query error"),
 		},
 	}
 	rdb, mock := redismock.NewClientMock()
@@ -564,8 +564,8 @@ func TestStream_computeMembers(t *testing.T) {
 				t.Errorf("computeMembers() got1 = %v, want %v", got1, tt.want1)
 			}
 
-			if got2 != tt.want2 {
-				t.Errorf("computeMembers() got2 = %v, want %v", got2, tt.want2)
+			if !reflect.DeepEqual(got2, tt.want2) {
+				t.Errorf("computeMembers() got2 = %v, want %v", got2, tt.want1)
 			}
 		})
 	}
@@ -574,8 +574,8 @@ func TestStream_computeMembers(t *testing.T) {
 func TestNewStreamFromDTO(t *testing.T) {
 	rdb, _ := redismock.NewClientMock()
 	logger := zerolog.New(os.Stderr).With().Logger()
-	store := store.NewRedisStore(rdb)
-	locker := locker.NewRedisLocker(rdb)
+	sstore := store.NewRedisStore(rdb)
+	slocker := locker.NewRedisLocker(rdb)
 	type args struct {
 		ctx context.Context
 		dto *streamDTO
@@ -599,7 +599,7 @@ func TestNewStreamFromDTO(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newStreamFromDTO(tt.args.ctx, rdb, tt.args.dto, store, locker, &logger)
+			got := newStreamFromDTO(tt.args.ctx, rdb, tt.args.dto, sstore, slocker, &logger)
 			if got.GetName() != tt.args.dto.Name {
 				t.Errorf("newStreamFromDTO() name = %v, want %v", got.GetName(), tt.args.dto.Name)
 			}
