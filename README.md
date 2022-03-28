@@ -5,8 +5,8 @@
 
 Package segmenter implements partition over redis streams
 
-Redis streams are great, fast and easy to use. But sometimes we want to ensure ordering in processing of events
-This library guarantees that all the events based on a partition key are processed in order on a single partition
+Redis streams are great, fast and easy to use. But sometimes we want to ensure ordering in processing of messages
+This library guarantees that all the messages based on a partition key are processed in order on a single consumer
 It also allows automatic re-balancing i.e. if a consumer is added/removed(dies) then the partitions are rebalanced
 and the ordering property is followed
 
@@ -84,4 +84,4 @@ if err != nil {
 }
 ```
 
-For more details you can check out the tests/e2e package. I contains end to end test which explains these in more detail
+For more details you can check out the tests/e2e package. It contains end-to-end tests which explains these in more detail
