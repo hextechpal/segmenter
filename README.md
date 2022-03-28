@@ -10,7 +10,7 @@ This library guarantees that all the events based on a partition key are process
 It also allows automatic re-balancing i.e. if a consumer is added/removed(dies) then the partitions are rebalanced
 and the ordering property is followed
 
-## Segmenter
+### Segmenter
 
 This is how the segmenter is initialized. Namespace is the logical container for segmenter.
 You can initialize multiple segmenter in same app with different namespaces or in diff apps with same namespaces
@@ -25,7 +25,7 @@ c := segmenter.Config{
 s, err := segmenter.NewSegmenter(&c)
 ```
 
-## Stream
+### Stream
 
 Stream can be registered by any other app as well given the segmenter namespace and redis backend is same.
 This enable some of your apps to just act as producer while some to just act as consumers.
@@ -51,7 +51,7 @@ for i := 0; i < 10; i++ {
 }
 ```
 
-## Consumer
+### Consumer
 
 Similar to the stream you can register the consumer using the segmenter. A stream should be registered with the
 segmenter before you register the consumer. if not you will get NonExistentStream error
@@ -85,6 +85,3 @@ if err != nil {
 ```
 
 For more details you can check out the tests/e2e package. I contains end to end test which explains these in more detail
-
----
-Readme created from Go doc with [goreadme](https://github.com/posener/goreadme)
