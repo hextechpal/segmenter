@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const psize = 100
+
 func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name string) *Stream {
 	t.Helper()
 	logger := zerolog.New(os.Stderr).With().Logger()
@@ -26,7 +28,7 @@ func createStream(t *testing.T, rdb *redis.Client, pc int, ns string, name strin
 		ns:     ns,
 		name:   name,
 		pcount: pc,
-		psize:  100,
+		psize:  psize,
 		logger: &logger,
 	}
 }
@@ -389,76 +391,32 @@ func TestStream_members(t *testing.T) {
 	}
 }
 
-//func TestStream_Send(t *testing.T) {
-//	rdb, mock := redismock.NewClientMock()
-//	type args struct {
-//		ctx context.Context
-//		pmg *contracts.PMessage
-//	}
-//	tests := []struct {
-//		name    string
-//		mockErr error
-//		args    args
-//		want    string
-//		wantErr bool
-//	}{
-//		{
-//			name: "No errors",
-//			args: args{
-//				ctx: context.Background(),
-//				pmg: &contracts.PMessage{
-//					Data:         []byte("No errors test case"),
-//					PartitionKey: "123",
-//				},
-//			},
-//			want:    "id1",
-//			wantErr: false,
-//		},
-//		{
-//			name: "with errors",
-//			args: args{
-//				ctx: context.Background(),
-//				pmg: &contracts.PMessage{
-//					Data:         []byte("No errors test case"),
-//					PartitionKey: "123",
-//				},
-//			},
-//			mockErr: errors.New("xadd error"),
-//			want:    "",
-//			wantErr: true,
-//		},
-//	}
-//
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			stream := createStream(t, rdb, 5, "sgNs", "sgSteam")
-//			data, _ := protojson.Marshal(tt.args.pmg)
-//			a := &redis.XAddArgs{
-//				Stream: PartitionedStream(stream.ns, stream.name, stream.getPartitionFromKey(tt.args.pmg.PartitionKey)),
-//				MaxLen: 100,
-//				Values: map[string]interface{}{
-//					"data":         data,
-//					"partitionKey": tt.args.pmg.PartitionKey,
-//				},
-//			}
-//			if tt.mockErr != nil {
-//				mock.ExpectXAdd(a).SetErr(tt.mockErr)
-//			} else {
-//				mock.ExpectXAdd(a).SetVal(tt.want)
-//			}
-//
-//			got, err := stream.Send(tt.args.ctx, tt.args.pmg)
-//			if (err != nil) != tt.wantErr {
-//				t.Errorf("Send() error = %v, wantErr %v", err, tt.wantErr)
-//				return
-//			}
-//			if !reflect.DeepEqual(got, tt.want) {
-//				t.Errorf("allMembers() got = %v, want %v", got, tt.want)
-//			}
-//		})
-//	}
-//
-//}
+func TestStream_GetPartitionSize(t *testing.T) {
+	rdb, _ := redismock.NewClientMock()
+	st := createStream(t, rdb, 10, "ns", "stream")
+
+	if st.GetPartitionSize() != psize {
+		t.Fatalf("GetPartitionSize(), got = %v, want : %v", st.GetPartitionSize(), psize)
+	}
+}
+
+func TestStream_GetPartitionCount(t *testing.T) {
+	rdb, _ := redismock.NewClientMock()
+	st := createStream(t, rdb, 10, "ns", "stream")
+
+	if st.GetPartitionCount() != 10 {
+		t.Fatalf("GetPartitionSize(), got = %v, want : %v", st.GetPartitionCount(), 10)
+	}
+}
+
+func TestStream_GetName(t *testing.T) {
+	rdb, _ := redismock.NewClientMock()
+	st := createStream(t, rdb, 10, "ns", "stream")
+
+	if st.GetName() != "stream" {
+		t.Fatalf("GetPartitionSize(), got = %v, want : %v", st.GetName(), "stream")
+	}
+}
 
 func TestStream_computeMembers(t *testing.T) {
 	jt := time.Now().UnixMilli()
@@ -608,6 +566,50 @@ func TestStream_computeMembers(t *testing.T) {
 
 			if got2 != tt.want2 {
 				t.Errorf("computeMembers() got2 = %v, want %v", got2, tt.want2)
+			}
+		})
+	}
+}
+
+func TestNewStreamFromDTO(t *testing.T) {
+	rdb, _ := redismock.NewClientMock()
+	logger := zerolog.New(os.Stderr).With().Logger()
+	store := store.NewRedisStore(rdb)
+	locker := locker.NewRedisLocker(rdb)
+	type args struct {
+		ctx context.Context
+		dto *StreamDTO
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "Test Stream from DTO",
+			args: args{
+				ctx: context.Background(),
+				dto: &StreamDTO{
+					Ns:     "ns",
+					Name:   "test1",
+					Pcount: 10,
+					Psize:  100,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewStreamFromDTO(tt.args.ctx, rdb, tt.args.dto, store, locker, &logger)
+			if got.GetName() != tt.args.dto.Name {
+				t.Errorf("NewStreamFromDTO() name = %v, want %v", got.GetName(), tt.args.dto.Name)
+			}
+
+			if got.GetPartitionCount() != tt.args.dto.Pcount {
+				t.Errorf("NewStreamFromDTO() pcount = %v, want %v", got.GetPartitionCount(), tt.args.dto.Pcount)
+			}
+
+			if got.GetPartitionSize() != tt.args.dto.Psize {
+				t.Errorf("NewStreamFromDTO() psize = %v, want %v", got.GetPartitionSize(), tt.args.dto.Psize)
 			}
 		})
 	}

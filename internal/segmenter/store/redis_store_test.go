@@ -74,12 +74,22 @@ func Test_redisStore_GetKey(t *testing.T) {
 		},
 
 		{
-			name:    "Get With Error",
+			name:    "Error in redis set",
 			mockErr: errors.New(" get key error"),
 			args: args{
 				ctx: context.Background(),
 				key: "key",
 				v:   &testStruct{},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "Passing Non Pointer type",
+			args: args{
+				ctx: context.Background(),
+				key: "key",
+				v:   testStruct{},
 			},
 			want:    nil,
 			wantErr: true,
@@ -137,6 +147,15 @@ func Test_redisStore_SetKey(t *testing.T) {
 				v:   &testStruct{Msg: "abc"},
 			},
 			mockErr: errors.New("set key error"),
+			wantErr: true,
+		},
+		{
+			name: "Json marshal error",
+			args: args{
+				ctx: context.Background(),
+				key: "key",
+				v:   make(chan bool),
+			},
 			wantErr: true,
 		},
 	}
