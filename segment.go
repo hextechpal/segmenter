@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/rs/zerolog"
 	"time"
@@ -58,7 +57,7 @@ func (sg *segment) refreshLock() {
 
 func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse) {
 	pending, err := sg.c.s.rdb.XPendingExt(ctx, &redis.XPendingExtArgs{
-		Stream: core.partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
+		Stream: partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:  sg.c.group,
 		Idle:   sg.c.maxProcessingTime,
 		Start:  "-",
@@ -91,7 +90,7 @@ func (sg *segment) pendingEntries(ctx context.Context, ch chan *pendingResponse)
 
 func (sg *segment) claimEntries(ctx context.Context, ch chan *claimResponse, ids []string) {
 	result, err := sg.c.s.rdb.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   core.partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
+		Stream:   partitionedStream(sg.c.GetNameSpace(), sg.c.GetStreamName(), sg.partition),
 		Group:    sg.c.group,
 		Consumer: sg.c.id,
 		Messages: ids,
