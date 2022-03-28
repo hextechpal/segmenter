@@ -10,7 +10,7 @@ func TestMultiConsumer(t *testing.T) {
 	group := "multiConsumerTestGrp"
 	seg := createSegmenter(t)
 	st, err := seg.RegisterStream(ctx, streamName, pcount, psize)
-	ptime := 100 * time.Millisecond
+	ptime := 200 * time.Millisecond
 	if err != nil {
 		t.Fatalf("RegisterStream(), err = %s", err)
 	}

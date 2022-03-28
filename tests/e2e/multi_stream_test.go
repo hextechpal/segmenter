@@ -27,7 +27,7 @@ func TestMultiStream(t *testing.T) {
 }
 
 func testForStream(t *testing.T, streamName, group string, seg *segmenter.Segmenter, done chan bool) {
-	ptime := 100 * time.Millisecond
+	ptime := 200 * time.Millisecond
 	st, err := seg.RegisterStream(ctx, streamName, pcount, psize)
 	if err != nil {
 		done <- false

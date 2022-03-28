@@ -15,7 +15,7 @@ func TestMultiConsumerGroups(t *testing.T) {
 	group1 := "multiCgGrp1"
 	group2 := "multiCgGrp2"
 	seg := createSegmenter(t)
-	ptime := 100 * time.Millisecond
+	ptime := 200 * time.Millisecond
 
 	// Register the stream
 	st, err := seg.RegisterStream(ctx, streamName, pcount, psize)
