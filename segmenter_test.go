@@ -120,7 +120,7 @@ func TestSegmenter_RegisterStream(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Invalid Partition Count",
+			name: "Invalid partition Count",
 			args: args{
 				ctx:    context.Background(),
 				name:   "sgroot",
@@ -131,7 +131,7 @@ func TestSegmenter_RegisterStream(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Invalid Partition size",
+			name: "Invalid partition size",
 			args: args{
 				ctx:    context.Background(),
 				name:   "sgroot",

@@ -18,8 +18,8 @@ var NonExistentStream = errors.New("stream do not exist")
 var EmptyStreamName = errors.New("stream name cannot be empty")
 var EmptyGroupName = errors.New("group cannot be empty")
 var InvalidBatchSize = errors.New("batch size cannot less than 1")
-var InvalidPartitionCount = errors.New("Partition count cannot less than 1")
-var InvalidPartitionSize = errors.New("Partition size cannot less than 1")
+var InvalidPartitionCount = errors.New("partition count cannot less than 1")
+var InvalidPartitionSize = errors.New("partition size cannot less than 1")
 
 type Segmenter struct {
 	mu      sync.Mutex

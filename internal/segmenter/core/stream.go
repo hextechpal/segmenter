@@ -96,7 +96,7 @@ func NewStreamFromDTO(ctx context.Context, rdb *redis.Client, dto *StreamDTO, s 
 func (s *Stream) Send(ctx context.Context, m *contracts.PMessage) (string, error) {
 	data, _ := protojson.Marshal(m)
 	id, err := s.rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: PartitionedStream(s.ns, s.name, s.getPartitionFromKey(m.GetPartitionKey())),
+		Stream: partitionedStream(s.ns, s.name, s.getPartitionFromKey(m.GetPartitionKey())),
 		MaxLen: s.psize,
 		Values: map[string]interface{}{
 			"data":         data,
@@ -233,7 +233,7 @@ func (s *Stream) performMaintenance(ctx context.Context, group string) error {
 func (s *Stream) calculateDeadMembers(ctx context.Context, members members) members {
 	keys := make([]string, members.Len())
 	for i := 0; i < members.Len(); i++ {
-		keys[i] = HeartBeat(s.ns, s.name, members[i].ID, members[i].Group)
+		keys[i] = heartBeat(s.ns, s.name, members[i].ID, members[i].Group)
 	}
 	res := s.rdb.MGet(ctx, keys...)
 	dead := make([]member, 0)
@@ -351,7 +351,7 @@ func (s *Stream) processControlMessage(ctx context.Context, stream string, lastI
 func (s *Stream) RegisterConsumer(ctx context.Context, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c, err := NewConsumer(ctx, &NewConsumerArgs{
+	c, err := NewConsumer(ctx, &newConsumerArgs{
 		Stream:            s,
 		Group:             group,
 		BatchSize:         batchSize,

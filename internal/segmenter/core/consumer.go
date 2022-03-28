@@ -31,7 +31,7 @@ type Consumer struct {
 	active     bool
 }
 
-type NewConsumerArgs struct {
+type newConsumerArgs struct {
 	Stream            *Stream
 	BatchSize         int64
 	Group             string
@@ -41,7 +41,7 @@ type NewConsumerArgs struct {
 
 // Public Functions
 
-func NewConsumer(ctx context.Context, args *NewConsumerArgs) (*Consumer, error) {
+func NewConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) {
 	id := utils.GenerateUuid()
 	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Int64("bsize", args.BatchSize).Logger()
 	c := &Consumer{
@@ -88,7 +88,7 @@ func (c *Consumer) Ack(ctx context.Context, cmessage *contracts.CMessage) error 
 		return ConsumerDeadError
 	}
 	p := c.s.getPartitionFromKey(cmessage.PartitionKey)
-	stream := PartitionedStream(c.s.ns, c.s.name, p)
+	stream := partitionedStream(c.s.ns, c.s.name, p)
 	return c.s.rdb.XAck(ctx, stream, c.group, cmessage.Id).Err()
 }
 
@@ -117,7 +117,7 @@ func (c *Consumer) GetNameSpace() string {
 func (c *Consumer) rePartition(ctx context.Context, partitions Partitions) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.logger.Debug().Msgf("Re Partitioning started, partitions %v", partitions)
+	c.logger.Debug().Msgf("Re Partitioning started, Partitions %v", partitions)
 	toBeReleased := make([]Partition, 0)
 	for p := range c.segmentMap {
 		if !partitions.Contains(p) {
@@ -158,7 +158,7 @@ func (c *Consumer) buildStreamsKey() []string {
 	i := 0
 	streams := make([]string, 2*segmentCount)
 	for _, sg := range c.segmentMap {
-		streams[i] = PartitionedStream(c.GetNameSpace(), c.GetStreamName(), sg.partition)
+		streams[i] = partitionedStream(c.GetNameSpace(), c.GetStreamName(), sg.partition)
 		streams[i+segmentCount] = ">"
 		i += 1
 	}
@@ -279,7 +279,7 @@ func (c *Consumer) beat() {
 		case <-c.shutDown:
 			return
 		default:
-			set := c.s.rdb.Set(ctx, HeartBeat(c.GetNameSpace(), c.GetStreamName(), c.id, c.group), time.Now().UnixMilli(), heartBeatDuration)
+			set := c.s.rdb.Set(ctx, heartBeat(c.GetNameSpace(), c.GetStreamName(), c.id, c.group), time.Now().UnixMilli(), heartBeatDuration)
 			if set.Err() != nil {
 				c.logger.Info().Msg("Error occurred while refreshing heartbeat")
 				time.Sleep(100 * time.Millisecond)
@@ -291,7 +291,7 @@ func (c *Consumer) beat() {
 
 func (c *Consumer) checkConsumerGroup(ctx context.Context) error {
 	for i := 0; i < c.s.pcount; i++ {
-		key := PartitionedStream(c.s.ns, c.s.name, Partition(i))
+		key := partitionedStream(c.s.ns, c.s.name, Partition(i))
 		err := c.s.rdb.XGroupCreateMkStream(ctx, key, c.group, "$").Err()
 		if err != nil {
 			if err.Error() == "BUSYGROUP Consumer Group name already exists" {
