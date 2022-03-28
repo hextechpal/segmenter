@@ -1,3 +1,4 @@
+name: GoReadMe
 on:
   push:
     branches: [main]
