@@ -2,7 +2,6 @@ package segmenter
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
@@ -12,13 +11,6 @@ import (
 	"sync"
 	"time"
 )
-
-var NonExistentStream = errors.New("stream do not exist")
-var EmptyStreamName = errors.New("stream name cannot be empty")
-var EmptyGroupName = errors.New("group cannot be empty")
-var InvalidBatchSize = errors.New("batch size cannot less than 1")
-var InvalidPartitionCount = errors.New("partition count cannot less than 1")
-var InvalidPartitionSize = errors.New("partition size cannot less than 1")
 
 type Segmenter struct {
 	mu      sync.Mutex

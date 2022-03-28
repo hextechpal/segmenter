@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/go-redis/redismock/v8"
-	"github.com/hextechpal/segmenter/internal/segmenter/core"
 	"github.com/hextechpal/segmenter/internal/segmenter/locker"
 	"github.com/hextechpal/segmenter/internal/segmenter/store"
 	"github.com/rs/zerolog"
@@ -440,7 +439,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     core.join,
+					Reason:     join,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -466,7 +465,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     core.join,
+					Reason:     join,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -488,7 +487,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     core.leave,
+					Reason:     leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -510,7 +509,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     core.leave,
+					Reason:     leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
@@ -533,7 +532,7 @@ func TestStream_computeMembers(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				changeInfo: &memberChangeInfo{
-					Reason:     core.leave,
+					Reason:     leave,
 					ConsumerId: "consumer1",
 					Group:      "grp1",
 					Ts:         jt,
