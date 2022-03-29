@@ -101,3 +101,7 @@ if err != nil {
 
 For more details you can check out the tests/e2e package. It contains end-to-end test which explains these concepts
 in more detail
+
+---
+## Bugs / Feature request
+New features can be requested and bugs can be reported on [Github issue tracker](https://github.com/hextechpal/segmenter/issues).
