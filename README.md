@@ -1,3 +1,4 @@
+
 # segmenter
 
 [![codecov](https://codecov.io/gh/hextechpal/segmenter/branch/master/graph/badge.svg)](https://codecov.io/gh/hextechpal/segmenter)
@@ -9,6 +10,13 @@ Redis streams are great, fast and easy to use. But sometimes we want to ensure o
 This library guarantees that all the messages based on a partition key are processed in order on a single consumer
 It also allows does re-balancing i.e. if a consumer is added/removed(dies) then the partitions are rebalanced
 and the ordering property is followed
+ 
+Without segmenter
+<img src="docs/no_segmenter.png"/>
+
+With segmenter
+<img src="docs/with_segmenter.png"/>
+
 
 ## Segmenter
 
@@ -89,6 +97,3 @@ if err != nil {
 
 For more details you can check out the tests/e2e package. It contains end-to-end test which explains these concepts
 in more detail
-
----
-Readme created from Go doc with [goreadme](https://github.com/posener/goreadme)

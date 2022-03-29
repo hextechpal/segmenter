@@ -53,7 +53,7 @@ func setupLogger(debug bool, space string) *zerolog.Logger {
 }
 
 // RegisterConsumer : Registers a consumer with segmenter against a stream and group with given batchSize and processingTime
-func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
+func (seg *Segmenter) RegisterConsumer(ctx context.Context, name string, group string, batchSize int64, maxProcessingTime time.Duration) (*Consumer, error) {
 
 	if name == "" {
 		return nil, ErrorEmptyStreamName
@@ -66,20 +66,20 @@ func (s *Segmenter) RegisterConsumer(ctx context.Context, name string, group str
 	if batchSize < 1 {
 		return nil, ErrorInvalidBatchSize
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stream, err := s.findStream(ctx, name)
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
+	stream, err := seg.findStream(ctx, name)
 	if err != nil || stream == nil {
 		// TODO handle the case when stream do not exist
 		return nil, ErrorNonExistentStream
 	}
 
-	s.logger.Debug().Msgf("registering new consumer for stream %s", stream.GetName())
+	seg.logger.Debug().Msgf("registering new consumer for stream %seg", stream.GetName())
 	return stream.registerConsumer(ctx, group, batchSize, maxProcessingTime)
 }
 
 // RegisterStream : Registers a stream with segmenter with given partition count and partition size
-func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
+func (seg *Segmenter) RegisterStream(ctx context.Context, name string, pcount int, psize int64) (*Stream, error) {
 	if name == "" {
 		return nil, ErrorEmptyStreamName
 	}
@@ -92,49 +92,49 @@ func (s *Segmenter) RegisterStream(ctx context.Context, name string, pcount int,
 		return nil, ErrorInvalidPartitionSize
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	stream, ok := s.streams[name]
+	seg.mu.Lock()
+	defer seg.mu.Unlock()
+	stream, ok := seg.streams[name]
 	if ok {
 		return stream, nil
 	}
 
-	streamDTO, err := s.fetchStreamDTO(ctx, name)
+	streamDTO, err := seg.fetchStreamDTO(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
 	// This will happen when we fetched the stream from redis hence initiating it
 	if streamDTO != nil {
-		stream = newStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
-		s.streams[stream.GetName()] = stream
+		stream = newStreamFromDTO(ctx, seg.rdb, streamDTO, seg.store, seg.locker, seg.logger)
+		seg.streams[stream.GetName()] = stream
 		return stream, nil
 	}
 
 	stream = newStream(ctx, &newStreamArgs{
-		Rdb:    s.rdb,
-		Ns:     s.ns,
+		Rdb:    seg.rdb,
+		Ns:     seg.ns,
 		Name:   name,
 		Pcount: pcount,
 		Psize:  psize,
-		Logger: s.logger,
-		Store:  s.store,
-		Locker: s.locker,
+		Logger: seg.logger,
+		Store:  seg.store,
+		Locker: seg.locker,
 	})
-	err = s.saveStream(ctx, name, stream)
+	err = seg.saveStream(ctx, name, stream)
 	if err != nil {
 		return nil, err
 	}
-	s.streams[stream.GetName()] = stream
+	seg.streams[stream.GetName()] = stream
 	return stream, nil
 }
 
-func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error) {
-	stream, ok := s.streams[name]
+func (seg *Segmenter) findStream(ctx context.Context, name string) (*Stream, error) {
+	stream, ok := seg.streams[name]
 	if ok {
 		return stream, nil
 	}
-	streamDTO, err := s.fetchStreamDTO(ctx, name)
+	streamDTO, err := seg.fetchStreamDTO(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +142,14 @@ func (s *Segmenter) findStream(ctx context.Context, name string) (*Stream, error
 	if streamDTO == nil {
 		return nil, nil
 	}
-	stream = newStreamFromDTO(ctx, s.rdb, streamDTO, s.store, s.locker, s.logger)
-	s.streams[name] = stream
+	stream = newStreamFromDTO(ctx, seg.rdb, streamDTO, seg.store, seg.locker, seg.logger)
+	seg.streams[name] = stream
 	return stream, nil
 }
 
-func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO, error) {
+func (seg *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO, error) {
 	var st streamDTO
-	err := s.store.GetKey(ctx, s.streamStorageKey(name), &st)
+	err := seg.store.GetKey(ctx, seg.streamStorageKey(name), &st)
 	if err == redis.Nil {
 		return nil, nil
 	}
@@ -161,21 +161,21 @@ func (s *Segmenter) fetchStreamDTO(ctx context.Context, name string) (*streamDTO
 	return &st, nil
 }
 
-func (s *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
-	lock, err := s.locker.Acquire(ctx, s.streamAdmin(s.ns, name), 100*time.Millisecond, "")
+func (seg *Segmenter) saveStream(ctx context.Context, name string, stream *Stream) error {
+	lock, err := seg.locker.Acquire(ctx, seg.streamAdmin(seg.ns, name), 100*time.Millisecond, "")
 	if err != nil {
 		return err
 	}
 	defer lock.Release(ctx)
 	streamDTO := newStreamDTO(stream)
 
-	return s.store.SetKey(ctx, s.streamStorageKey(name), streamDTO)
+	return seg.store.SetKey(ctx, seg.streamStorageKey(name), streamDTO)
 }
 
-func (s *Segmenter) streamStorageKey(name string) string {
-	return fmt.Sprintf("__%s:%s:info", s.ns, name)
+func (seg *Segmenter) streamStorageKey(name string) string {
+	return fmt.Sprintf("__%seg:%seg:info", seg.ns, name)
 }
 
-func (s *Segmenter) streamAdmin(ns string, stream string) string {
-	return fmt.Sprintf("__%s:%s:admin", ns, stream)
+func (seg *Segmenter) streamAdmin(ns string, stream string) string {
+	return fmt.Sprintf("__%seg:%seg:admin", ns, stream)
 }
