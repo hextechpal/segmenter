@@ -40,7 +40,7 @@ func createSegmenter(t *testing.T) *segmenter.Segmenter {
 	c := segmenter.Config{
 		RedisOptions: &redis.Options{Addr: "localhost:6379"},
 		NameSpace:    ns,
-		Debug:        false,
+		Debug:        true,
 	}
 	s, err := segmenter.NewSegmenter(&c)
 	if err != nil {
