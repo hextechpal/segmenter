@@ -12,10 +12,14 @@ It also allows does re-balancing i.e. if a consumer is added/removed(dies) then 
 and the ordering property is followed
  
 Without segmenter
-<img src="docs/no_segmenter.png"/>
+
+
+<img src="docs/no_segmenter.png" width="480"/>
 
 With segmenter
-<img src="docs/with_segmenter.png"/>
+
+
+<img src="docs/with_segmenter.png" width="480"/>
 
 
 ## Segmenter
