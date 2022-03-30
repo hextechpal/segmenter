@@ -41,13 +41,13 @@ func (sg *segment) refreshLock() {
 		case <-sg.shutDown:
 			err := sg.lock.Release(ctx)
 			if err != nil {
-				sg.logger.Debug().Err(err).Msgf("Releasing lock with key stream %s, partition %d", sg.c.GetStreamName(), sg.partition)
+				sg.logger.Error().Err(err).Msgf("Releasing lock with key stream %s, partition %d", sg.c.GetStreamName(), sg.partition)
 			}
 			return
 		default:
 			err := sg.lock.Refresh(ctx, lockDuration)
 			if err != nil {
-				sg.logger.Debug().Err(err).Msgf("Error happened while refreshing lock %s", sg.lock.Key())
+				sg.logger.Error().Err(err).Msgf("Error happened while refreshing lock %s", sg.lock.Key())
 			}
 		}
 		time.Sleep(1000 * time.Millisecond)
