@@ -48,7 +48,14 @@ func setupLogger(debug bool, space string) *zerolog.Logger {
 	}
 
 	zerolog.SetGlobalLevel(logLevel)
-	logger := zerolog.New(os.Stderr).With().Timestamp().Str("ns", space).Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	logger := zerolog.
+		New(os.Stderr).
+		With().Timestamp().
+		Str("ns", space).
+		Logger().
+		Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	return &logger
 }
 
