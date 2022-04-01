@@ -43,7 +43,13 @@ type newConsumerArgs struct {
 
 func newConsumer(ctx context.Context, args *newConsumerArgs) (*Consumer, error) {
 	id := utils.GenerateUuid()
-	nLogger := args.Logger.With().Str("stream", args.Stream.name).Str("consumerId", id).Str("group", args.Group).Int64("bsize", args.BatchSize).Logger()
+
+	nLogger := args.Logger.
+		With().
+		Str("stream", args.Stream.name).
+		Str("consumerId", id).Str("group", args.Group).
+		Int64("bsize", args.BatchSize).Logger()
+
 	c := &Consumer{
 		s:      args.Stream,
 		logger: &nLogger,
