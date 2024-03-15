@@ -8,7 +8,7 @@ require (
 	github.com/go-redis/redismock/v8 v8.0.6
 	github.com/google/uuid v1.3.0
 	github.com/rs/zerolog v1.26.1
-	google.golang.org/protobuf v1.27.1
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
